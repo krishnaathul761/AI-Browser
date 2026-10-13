@@ -1,0 +1,491 @@
+const bannerEl = document.getElementById("banner");
+const settingsBtn = document.getElementById("open-settings");
+const langButtons = document.querySelectorAll(".lang-btn");
+const tabButtons = document.querySelectorAll(".tab");
+const summariseBtn = document.getElementById("summarise-btn");
+const summaryArea = document.getElementById("summary-area");
+const explainBtn = document.getElementById("explain-btn");
+const resultArea = document.getElementById("result-area");
+
+// ── Banner ────────────────────────────────────────────────────────────────────
+
+function showBanner(message, kind) {
+  if (!message) {
+    bannerEl.hidden = true;
+    bannerEl.textContent = "";
+    bannerEl.classList.remove("is-ok");
+    return;
+  }
+  bannerEl.hidden = false;
+  bannerEl.classList.toggle("is-ok", kind === "ok");
+  bannerEl.textContent = "";
+  bannerEl.append(message);
+  if (kind === "settings") {
+    const cta = document.createElement("button");
+    cta.type = "button";
+    cta.className = "banner-cta";
+    cta.textContent = "Open Settings";
+    cta.addEventListener("click", openSettings);
+    bannerEl.append(" ");
+    bannerEl.append(cta);
+  }
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+function openSettings() {
+  if (globalThis.chrome && chrome.runtime && chrome.runtime.openOptionsPage) {
+    chrome.runtime.openOptionsPage();
+    return;
+  }
+  showBanner("Open Sahayak as a Chrome extension to use Settings.");
+}
+
+// ── Messaging ─────────────────────────────────────────────────────────────────
+
+async function send(type, payload) {
+  if (!globalThis.chrome || !chrome.runtime || !chrome.runtime.sendMessage) {
+    throw new Error("Load unpacked in Chrome to talk to the extension.");
+  }
+  const message = envelope(type, payload);
+  const response = await chrome.runtime.sendMessage(message);
+  if (!response) {
+    throw new Error("No response from background");
+  }
+  if (!response.ok) {
+    throw new Error(response.error || "Request failed");
+  }
+  return response.data;
+}
+
+// ── Language toggle ───────────────────────────────────────────────────────────
+
+function applyLanguage(language) {
+  langButtons.forEach((btn) => {
+    btn.classList.toggle("is-active", btn.getAttribute("data-lang") === language);
+  });
+}
+
+async function setLanguage(language) {
+  applyLanguage(language);
+  await send("SETTINGS_SET", { language: language });
+}
+
+langButtons.forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const language = btn.getAttribute("data-lang");
+    try {
+      await setLanguage(language);
+    } catch (err) {
+      showBanner(err.message || "Could not save language.");
+    }
+  });
+});
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+
+tabButtons.forEach((btn) => {
+  if (btn.disabled) return;
+  btn.addEventListener("click", () => {
+    const target = btn.getAttribute("data-tab");
+    tabButtons.forEach((b) => b.classList.toggle("is-active", b.getAttribute("data-tab") === target));
+    document.querySelectorAll(".view").forEach((view) => {
+      view.hidden = view.getAttribute("data-view") !== target;
+    });
+  });
+});
+
+// ── Result area ───────────────────────────────────────────────────────────────
+
+/** Show a loading spinner in the result area. */
+function showLoading(label) {
+  resultArea.hidden = false;
+  resultArea.innerHTML = "";
+  const div = document.createElement("div");
+  div.className = "loading-state";
+  div.textContent = label || "Thinking…";
+  resultArea.appendChild(div);
+}
+
+/**
+ * Render a result card in the result area.
+ *
+ * @param {{ label: string, body: string, kind?: "explain"|"summary" }} opts
+ */
+function showResult(opts) {
+  resultArea.hidden = false;
+  resultArea.innerHTML = "";
+
+  const card = document.createElement("div");
+  card.className = "result-card";
+
+  const header = document.createElement("div");
+  header.className = "result-header";
+
+  const labelEl = document.createElement("span");
+  labelEl.className = "result-label";
+  labelEl.textContent = opts.label || "Result";
+  header.appendChild(labelEl);
+
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "copy-btn";
+  copyBtn.title = "Copy to clipboard";
+  copyBtn.textContent = "Copy";
+  copyBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(opts.body).then(() => {
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+    }).catch(() => {});
+  });
+  header.appendChild(copyBtn);
+
+  card.appendChild(header);
+
+  const body = document.createElement("p");
+  body.className = "result-body";
+  // Preserve line-breaks from the model response.
+  body.textContent = opts.body;
+  card.appendChild(body);
+
+  resultArea.appendChild(card);
+}
+
+/** Show an inline error inside the result area (not the global banner). */
+function showResultError(message) {
+  resultArea.hidden = false;
+  resultArea.innerHTML = "";
+  const div = document.createElement("div");
+  div.className = "result-error";
+  div.textContent = message;
+  resultArea.appendChild(div);
+}
+
+// ── Summarise page ────────────────────────────────────────────────────────────
+
+function showSummary(data) {
+  summaryArea.hidden = false;
+  summaryArea.innerHTML = "";
+
+  // Route to the right renderer.
+  if (data.videoId) {
+    showYouTubeSummary(data);
+  } else {
+    showArticleSummary(data);
+  }
+}
+
+// ── Article summary renderer ──────────────────────────────────────────────────
+
+function showArticleSummary(data) {
+  const card = document.createElement("div");
+  card.className = "summary-card";
+
+  // Header
+  const header = buildSummaryHeader("Summary", data.isFallback, buildCopyText(data));
+  card.appendChild(header);
+
+  // Raw fallback
+  if (data.parseError) {
+    const rawP = document.createElement("p");
+    rawP.className = "result-body";
+    rawP.textContent = data.raw || "No summary returned.";
+    card.appendChild(rawP);
+    summaryArea.appendChild(card);
+    return;
+  }
+
+  card.appendChild(buildTldrSection(data.tldr));
+  card.appendChild(buildKeyPointsSection(data.keyPoints));
+  card.appendChild(buildNextStepsSection(data.nextSteps));
+  summaryArea.appendChild(card);
+}
+
+// ── YouTube summary renderer ──────────────────────────────────────────────────
+
+function showYouTubeSummary(data) {
+  const card = document.createElement("div");
+  card.className = "summary-card";
+
+  // Header with YouTube badge
+  const header = buildSummaryHeader("YouTube Summary", false, buildYouTubeCopyText(data));
+
+  const badge = document.createElement("span");
+  badge.className = "yt-badge";
+  badge.textContent = "▶ YouTube";
+  // Insert badge between label and copy button
+  header.insertBefore(badge, header.querySelector(".copy-btn"));
+  card.appendChild(header);
+
+  // Raw fallback
+  if (data.parseError) {
+    const rawP = document.createElement("p");
+    rawP.className = "result-body";
+    rawP.textContent = data.raw || "No summary returned.";
+    card.appendChild(rawP);
+    summaryArea.appendChild(card);
+    return;
+  }
+
+  card.appendChild(buildTldrSection(data.tldr));
+  card.appendChild(buildKeyPointsSection(data.keyPoints));
+
+  // Timestamps section — only when the model returned any
+  if (data.timestamps && data.timestamps.length > 0) {
+    card.appendChild(buildTimestampsSection(data.timestamps, data.videoId));
+  }
+
+  card.appendChild(buildNextStepsSection(data.nextSteps));
+  summaryArea.appendChild(card);
+}
+
+// ── Shared section builders ───────────────────────────────────────────────────
+
+function buildSummaryHeader(label, isFallback, copyText) {
+  const header = document.createElement("div");
+  header.className = "result-header";
+
+  const labelEl = document.createElement("span");
+  labelEl.className = "result-label";
+  labelEl.textContent = label;
+  header.appendChild(labelEl);
+
+  if (isFallback) {
+    const warn = document.createElement("span");
+    warn.className = "fallback-badge";
+    warn.title = "Full article text could not be cleanly extracted — summary may include navigation or footer text.";
+    warn.textContent = "approx.";
+    header.appendChild(warn);
+  }
+
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "copy-btn";
+  copyBtn.textContent = "Copy";
+  copyBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(copyText).then(() => {
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+    }).catch(() => {});
+  });
+  header.appendChild(copyBtn);
+  return header;
+}
+
+function buildTldrSection(tldr) {
+  const section = document.createElement("div");
+  section.className = "summary-section";
+  const lbl = document.createElement("p");
+  lbl.className = "summary-section-label";
+  lbl.textContent = "TL;DR";
+  section.appendChild(lbl);
+  const p = document.createElement("p");
+  p.className = "summary-tldr";
+  p.textContent = tldr;
+  section.appendChild(p);
+  return section;
+}
+
+function buildKeyPointsSection(keyPoints) {
+  const section = document.createElement("div");
+  section.className = "summary-section";
+  const lbl = document.createElement("p");
+  lbl.className = "summary-section-label";
+  lbl.textContent = "Key points";
+  section.appendChild(lbl);
+  const ul = document.createElement("ul");
+  ul.className = "summary-points";
+  (keyPoints || []).forEach((point) => {
+    const li = document.createElement("li");
+    li.textContent = point;
+    ul.appendChild(li);
+  });
+  section.appendChild(ul);
+  return section;
+}
+
+/**
+ * Renders clickable timestamp links.
+ * Each link opens the video at the right time: youtube.com/watch?v=ID&t=SECONDS
+ */
+function buildTimestampsSection(timestamps, videoId) {
+  const section = document.createElement("div");
+  section.className = "summary-section";
+  const lbl = document.createElement("p");
+  lbl.className = "summary-section-label";
+  lbl.textContent = "Chapters";
+  section.appendChild(lbl);
+
+  const list = document.createElement("div");
+  list.className = "timestamp-list";
+
+  timestamps.forEach(({ label, seconds }) => {
+    const row = document.createElement("div");
+    row.className = "timestamp-row";
+
+    const link = document.createElement("a");
+    link.className = "timestamp-link";
+    link.href = "https://www.youtube.com/watch?v=" + videoId + "&t=" + seconds;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = formatSeconds(seconds);
+
+    const text = document.createElement("span");
+    text.className = "timestamp-label";
+    text.textContent = label;
+
+    row.appendChild(link);
+    row.appendChild(text);
+    list.appendChild(row);
+  });
+
+  section.appendChild(list);
+  return section;
+}
+
+function buildNextStepsSection(nextSteps) {
+  const section = document.createElement("div");
+  section.className = "summary-section summary-section--last";
+  const lbl = document.createElement("p");
+  lbl.className = "summary-section-label";
+  lbl.textContent = "What to do next";
+  section.appendChild(lbl);
+  const p = document.createElement("p");
+  p.className = "summary-next";
+  p.textContent = nextSteps;
+  section.appendChild(p);
+  return section;
+}
+
+/** Format whole seconds to M:SS or H:MM:SS */
+function formatSeconds(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(s / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+  if (hours > 0) {
+    return hours + ":" + String(mins).padStart(2, "0") + ":" + String(secs).padStart(2, "0");
+  }
+  return mins + ":" + String(secs).padStart(2, "0");
+}
+
+function buildCopyText(data) {
+  if (data.parseError) return data.raw || "";
+  const points = (data.keyPoints || []).map((p, i) => (i + 1) + ". " + p).join("\n");
+  return (
+    "TL;DR\n" + data.tldr + "\n\n" +
+    "Key Points\n" + points + "\n\n" +
+    "What to do next\n" + data.nextSteps
+  );
+}
+
+function buildYouTubeCopyText(data) {
+  if (data.parseError) return data.raw || "";
+  const points = (data.keyPoints || []).map((p, i) => (i + 1) + ". " + p).join("\n");
+  const ts = (data.timestamps || [])
+    .map((t) => formatSeconds(t.seconds) + "  " + t.label)
+    .join("\n");
+  return (
+    "TL;DR\n" + data.tldr + "\n\n" +
+    "Key Points\n" + points + "\n\n" +
+    (ts ? "Chapters\n" + ts + "\n\n" : "") +
+    "What to do next\n" + data.nextSteps
+  );
+}
+
+summariseBtn.addEventListener("click", async () => {
+  showBanner("");
+  summaryArea.hidden = true;
+  summaryArea.innerHTML = "";
+
+  // Show loading inside the summary area.
+  summaryArea.hidden = false;
+  const loadingDiv = document.createElement("div");
+  loadingDiv.className = "loading-state";
+  loadingDiv.textContent = "Summarising…";
+  summaryArea.appendChild(loadingDiv);
+  summariseBtn.disabled = true;
+
+  try {
+    const data = await send("SUMMARY_ARTICLE", {});
+    showSummary(data);
+  } catch (err) {
+    const msg = err.message || "Something went wrong.";
+    summaryArea.hidden = true;
+
+    if (msg === "RESTRICTED_PAGE") {
+      showBanner("Sahayak can't summarise this page (browser or extension page).");
+      return;
+    }
+    if (msg === "EMPTY_PAGE") {
+      showBanner("This page doesn't seem to have readable article text.");
+      return;
+    }
+    if (msg === "YOUTUBE_UNAVAILABLE") {
+      showBanner("This video is private or unavailable — Sahayak can only summarise public YouTube videos.");
+      return;
+    }
+    if (msg === "MISSING_KEY") {
+      showBanner("Add a Gemini or Groq API key in Settings to use AI features.", "settings");
+      return;
+    }
+    showBanner(msg);
+  } finally {
+    summariseBtn.disabled = false;
+  }
+});
+
+// ── Explain selection ─────────────────────────────────────────────────────────
+
+explainBtn.addEventListener("click", async () => {
+  showBanner(""); // clear any previous banner
+  showLoading("Explaining…");
+  explainBtn.disabled = true;
+
+  try {
+    const data = await send("SELECTION_ACTION", { mode: "explain" });
+    showResult({ label: "Explanation", body: data.result, kind: "explain" });
+  } catch (err) {
+    const msg = err.message || "Something went wrong.";
+
+    if (msg === "NO_SELECTION") {
+      showResultError("Select some text on the page first, then press Explain selection.");
+      return;
+    }
+    if (msg === "MISSING_KEY") {
+      resultArea.hidden = true;
+      showBanner("Add a Gemini or Groq API key in Settings to use AI features.", "settings");
+      return;
+    }
+    showResultError(msg);
+  } finally {
+    explainBtn.disabled = false;
+  }
+});
+
+// ── Load settings on startup ──────────────────────────────────────────────────
+
+async function loadSettings() {
+  const settings = await send("SETTINGS_GET");
+  applyLanguage(settings.language === "hinglish" ? "hinglish" : "en");
+  if (!settings.geminiApiKey && !settings.groqApiKey) {
+    showBanner("Add a Gemini or Groq API key in Settings to use AI features.", "settings");
+  } else {
+    showBanner("");
+  }
+}
+
+settingsBtn.addEventListener("click", openSettings);
+
+if (globalThis.chrome && chrome.storage && chrome.storage.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !changes.settings) {
+      return;
+    }
+    loadSettings().catch(() => {});
+  });
+}
+
+loadSettings().catch((err) => {
+  showBanner(err.message || "Could not load settings.");
+});

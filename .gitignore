@@ -1,0 +1,28 @@
+# Secrets — never commit API keys (keys live in chrome.storage.local via Options)
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.key
+credentials.json
+secrets.json
+**/google-services.json
+local.settings.json
+
+# Local packaging that may accidentally include keys or builds
+node_modules/
+dist/
+*.zip
+sahayak-extension.zip
+*.crx
+*.nupkg
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+.idea/
+.vscode/
+*.log

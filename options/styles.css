@@ -1,0 +1,191 @@
+:root {
+  --ink: #1c1917;
+  --muted: #78716c;
+  --paper: #f6f3ee;
+  --panel: #fffcf8;
+  --line: #e7e0d6;
+  --teal: #0d6b63;
+  --teal-ink: #0a4f4a;
+  --warn-bg: #fde8d6;
+  --warn-ink: #9a3412;
+  --ok-bg: #d9f0e8;
+  --ok-ink: #14532d;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  display: flex;
+  justify-content: center;
+  padding: 40px 16px;
+}
+
+.card {
+  width: min(560px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 24px;
+}
+
+header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+header img {
+  border-radius: 8px;
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.hint {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.status {
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+
+.status.is-ok  { background: var(--ok-bg);   color: var(--ok-ink); }
+.status.is-err { background: var(--warn-bg);  color: var(--warn-ink); }
+
+/* ── API key grid (two equal columns) ───────────────────────────────────── */
+
+.keys-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 480px) {
+  .keys-grid { grid-template-columns: 1fr; }
+}
+
+.key-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ── Provider colour dots ────────────────────────────────────────────────── */
+
+.provider-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.provider-dot--gemini { background: #4285f4; }
+.provider-dot--groq   { background: #f97316; }
+
+/* ── Labels & inputs ─────────────────────────────────────────────────────── */
+
+label,
+legend {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+input[type="password"] {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+}
+
+input[type="password"]:focus {
+  outline: 2px solid var(--teal);
+  outline-offset: 1px;
+}
+
+/* ── Fieldsets ───────────────────────────────────────────────────────────── */
+
+fieldset {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+}
+
+.choice {
+  font-weight: 400;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 8px 0;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.choice input[type="radio"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Provider status pill ────────────────────────────────────────────────── */
+
+.provider-status {
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
+.provider-status--ok   { background: var(--ok-bg);   color: var(--ok-ink); }
+.provider-status--warn { background: var(--warn-bg);  color: var(--warn-ink); }
+
+/* ── Save button ─────────────────────────────────────────────────────────── */
+
+button[type="submit"] {
+  border: 0;
+  background: var(--teal);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  width: 100%;
+}
+
+button[type="submit"]:hover {
+  background: var(--teal-ink);
+}

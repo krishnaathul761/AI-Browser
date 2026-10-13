@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sahayak Settings</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="card">
+      <header>
+        <img src="../assets/icon48.png" alt="" width="40" height="40" />
+        <div>
+          <h1>Sahayak Settings</h1>
+          <p>Keys stay on this device in Chrome storage. They are never committed to git.</p>
+        </div>
+      </header>
+
+      <p id="status" class="status" hidden></p>
+
+      <form id="settings-form">
+
+        <!-- ── API Keys ─────────────────────────────────────────────────── -->
+        <div class="keys-grid">
+          <div class="key-block">
+            <label for="gemini-key">
+              <span class="provider-dot provider-dot--gemini"></span>
+              Gemini API key
+            </label>
+            <input
+              id="gemini-key"
+              name="geminiApiKey"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Paste key, then Save"
+            />
+            <p class="hint" id="key-hint">Google AI Studio · free tier available</p>
+          </div>
+
+          <div class="key-block">
+            <label for="groq-key">
+              <span class="provider-dot provider-dot--groq"></span>
+              Groq API key
+            </label>
+            <input
+              id="groq-key"
+              name="groqApiKey"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Paste key, then Save"
+            />
+            <p class="hint" id="groq-hint">console.groq.com · free tier available</p>
+          </div>
+        </div>
+
+        <!-- ── Active provider ──────────────────────────────────────────── -->
+        <fieldset>
+          <legend>Active AI provider</legend>
+
+          <label class="choice">
+            <input type="radio" name="preferredProvider" value="auto" checked />
+            <span>
+              <strong>Auto</strong> — use Gemini; switch to Groq automatically if Gemini is unavailable
+            </span>
+          </label>
+
+          <label class="choice">
+            <input type="radio" name="preferredProvider" value="gemini" />
+            <span>
+              <strong>Gemini only</strong> — always use Gemini (required for YouTube &amp; vision)
+            </span>
+          </label>
+
+          <label class="choice">
+            <input type="radio" name="preferredProvider" value="groq" />
+            <span>
+              <strong>Groq only</strong> — always use Groq (text tasks only, faster on free tier)
+            </span>
+          </label>
+        </fieldset>
+
+        <!-- ── Language ─────────────────────────────────────────────────── -->
+        <fieldset>
+          <legend>Default response language</legend>
+          <label class="choice">
+            <input type="radio" name="language" value="en" checked />
+            English
+          </label>
+          <label class="choice">
+            <input type="radio" name="language" value="hinglish" />
+            Hinglish
+          </label>
+        </fieldset>
+
+        <div id="provider-status" class="provider-status" hidden></div>
+
+        <button type="submit">Save</button>
+      </form>
+    </main>
+    <script src="../lib/utils.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

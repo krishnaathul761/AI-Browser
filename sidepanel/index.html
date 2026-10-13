@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sahayak</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <img class="brand-icon" src="../assets/icon48.png" alt="" width="28" height="28" />
+          <div>
+            <strong>Sahayak</strong>
+            <span class="muted">You approve every action</span>
+          </div>
+        </div>
+        <div class="top-actions">
+          <div class="lang" role="group" aria-label="Response language">
+            <button type="button" class="lang-btn is-active" data-lang="en" id="lang-en">EN</button>
+            <button type="button" class="lang-btn" data-lang="hinglish" id="lang-hinglish">Hinglish</button>
+          </div>
+          <button type="button" class="link-btn" id="open-settings">Settings</button>
+        </div>
+      </header>
+
+      <div id="banner" class="banner" hidden role="status"></div>
+
+      <nav class="tabs" aria-label="Sahayak sections">
+        <button type="button" class="tab is-active" data-tab="summarise" id="tab-summarise">
+          Summarise
+        </button>
+        <button type="button" class="tab" data-tab="chat" disabled title="Coming in Week 2">Chat</button>
+        <button type="button" class="tab" data-tab="agent" disabled title="Coming in Week 3">Agent</button>
+        <button type="button" class="tab" data-tab="skills" disabled title="Coming in Week 4">Skills</button>
+      </nav>
+
+      <main class="main">
+        <section id="view-summarise" class="view" data-view="summarise">
+          <p class="lede">Summarise the current tab — article or public YouTube video.</p>
+
+          <!-- Summarise action — active from Slice 1.3 -->
+          <div class="action-row">
+            <button type="button" class="primary-btn" id="summarise-btn">
+              Summarise this page
+            </button>
+          </div>
+
+          <!-- Summary result — shown after successful AI call -->
+          <div id="summary-area" hidden></div>
+
+          <!-- Divider before explain section -->
+          <div class="explain-section" id="explain-section">
+            <p class="section-label">Selected text</p>
+            <button type="button" class="secondary-btn" id="explain-btn">
+              Explain selection
+            </button>
+          </div>
+
+          <!-- Result area for explain — populated after an AI call -->
+          <div id="result-area" hidden></div>
+        </section>
+      </main>
+    </div>
+    <script src="../lib/utils.js"></script>
+    <script src="panel.js"></script>
+  </body>
+</html>
