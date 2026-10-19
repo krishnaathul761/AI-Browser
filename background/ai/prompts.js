@@ -20,8 +20,8 @@
  * Templates are filled in Week 1+ slices. Do not send page text when safety.blocked.
  */
 
-const GEMINI_FLASH_LITE = "gemini-2.5-flash-lite";
-const GEMINI_FLASH      = "gemini-2.5-flash";
+const GEMINI_FLASH_LITE = "gemini-3.5-flash-lite";
+const GEMINI_FLASH      = "gemini-3.8-flash";
 
 /** Appended to text prompts from settings.language (`en` | `hinglish`). */
 function languageSuffix(language) {
