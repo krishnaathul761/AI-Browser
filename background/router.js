@@ -136,6 +136,9 @@ async function routeMessage(message, _sender) {
     case "CHAT_RESET":
       return handleChatReset(requestId, message);
 
+    case "CONTEXT_MENU_GET":
+      return handleContextMenuGet(requestId);
+
     default:
       return fail(requestId, "Unknown message type");
   }
@@ -153,45 +156,68 @@ async function routeMessage(message, _sender) {
  */
 async function handleSelectionAction(requestId, message) {
   const payload = message && message.payload;
-  const mode = payload && payload.mode;
+  const mode    = payload && payload.mode;
 
-  if (mode !== "explain") {
+  const VALID_MODES = ["explain", "translate", "draft"];
+  if (!VALID_MODES.includes(mode)) {
     return fail(requestId, 'Unsupported mode "' + mode + '"');
   }
 
-  // Resolve the target tab.
-  const tabId = await resolveTabId(payload && payload.tabId);
-  if (tabId === null) {
-    return fail(requestId, "No active tab found.");
-  }
+  // If selection text is provided directly (from context menu stash), use it.
+  // Otherwise fall back to asking the content script.
+  let selectionText = payload && payload.selection;
 
-  // 1. Fetch the current selection from the content script.
-  let selectionText;
-  try {
-    const selReply = await chrome.tabs.sendMessage(tabId, {
-      type: "GET_SELECTION",
-      requestId: uuid(),
-    });
-    selectionText = selReply && selReply.data && selReply.data.text;
-  } catch (_err) {
-    return fail(
-      requestId,
-      "Could not reach the page. Try reloading the tab, then try again."
-    );
+  if (!selectionText || !selectionText.trim()) {
+    // Resolve the target tab.
+    const tabId = await resolveTabId(payload && payload.tabId);
+    if (tabId === null) {
+      return fail(requestId, "No active tab found.");
+    }
+
+    try {
+      const selReply = await chrome.tabs.sendMessage(tabId, {
+        type: "GET_SELECTION",
+        requestId: uuid(),
+      });
+      selectionText = selReply && selReply.data && selReply.data.text;
+    } catch (_err) {
+      return fail(
+        requestId,
+        "Could not reach the page. Try reloading the tab, then try again."
+      );
+    }
   }
 
   if (!selectionText || !selectionText.trim()) {
     return fail(requestId, "NO_SELECTION");
   }
 
-  // 2. Gate: need at least one AI key.
+  // Gate on API key.
   const settings = await readSettings();
   if (!settings.geminiApiKey && !settings.groqApiKey) {
     return fail(requestId, "MISSING_KEY");
   }
 
-  // 3. Build prompt and call AI (Gemini with Groq fallback).
-  const prompt = buildExplainPrompt(selectionText.trim(), settings.language);
+  // Build prompt based on mode.
+  let prompt;
+  if (mode === "explain") {
+    prompt = buildExplainPrompt(selectionText.trim(), settings.language);
+  } else if (mode === "translate") {
+    // translateTarget is stored as a language code like "hi".
+    // Map common codes to names; fall back to the stored value as-is.
+    const langNames = {
+      hi: "Hindi", fr: "French", es: "Spanish", de: "German",
+      ja: "Japanese", zh: "Chinese", ar: "Arabic", pt: "Portuguese",
+      ru: "Russian", ko: "Korean", it: "Italian", ta: "Tamil",
+      te: "Telugu", bn: "Bengali", mr: "Marathi", gu: "Gujarati",
+    };
+    const targetCode = settings.translateTarget || "hi";
+    const targetName = langNames[targetCode] || targetCode;
+    prompt = buildTranslateSelectionPrompt(selectionText.trim(), targetName, settings.language);
+  } else if (mode === "draft") {
+    prompt = buildDraftPrompt(selectionText.trim(), settings.language);
+  }
+
   try {
     const result = await callAI({ model: GEMINI_FLASH_LITE, prompt, settings });
     return ok(requestId, { mode, result });
@@ -837,4 +863,26 @@ async function handleChatReset(requestId, message) {
     delete chatByTab[tabId];
   }
   return ok(requestId, { reset: true });
+}
+
+// ── CONTEXT_MENU_GET ──────────────────────────────────────────────────────────
+
+/**
+ * Return and clear any pending context menu action stashed by the SW.
+ * The panel calls this on startup to check if it was opened via right-click.
+ *
+ * Success data: { pending: { mode, selection, url, tabId } | null }
+ */
+async function handleContextMenuGet(requestId) {
+  try {
+    const bag = await chrome.storage.local.get("pendingContextAction");
+    const pending = bag.pendingContextAction || null;
+    // Clear immediately so it doesn't fire again on next panel open.
+    if (pending) {
+      await chrome.storage.local.remove("pendingContextAction");
+    }
+    return ok(requestId, { pending });
+  } catch (_e) {
+    return ok(requestId, { pending: null });
+  }
 }

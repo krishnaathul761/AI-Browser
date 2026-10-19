@@ -214,3 +214,27 @@ button[type="submit"]:hover {
 .clear-key-btn:hover {
   opacity: 0.75;
 }
+
+.field-block {
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+select {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+select:focus {
+  outline: 2px solid var(--teal);
+  outline-offset: 1px;
+}

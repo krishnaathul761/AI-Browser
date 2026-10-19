@@ -185,3 +185,46 @@ function buildChatPrompt(pageContext, history, userMessage, language) {
     languageSuffix(language)
   );
 }
+
+/**
+ * Translate selected text to a target language.
+ *
+ * @param {string} selectedText  - the text to translate
+ * @param {string} targetLang    - target language name e.g. "Hindi", "French"
+ * @param {string} language      - UI language "en" | "hinglish"
+ * @returns {string} assembled prompt
+ */
+function buildTranslateSelectionPrompt(selectedText, targetLang, language) {
+  return (
+    "Translate the following text into " + targetLang + ".\n" +
+    "Return only the translated text — no explanation, no notes, no original text.\n\n" +
+    '"""\n' +
+    selectedText.trim() +
+    '\n"""\n\n' +
+    languageSuffix(language)
+  );
+}
+
+/**
+ * Draft a reply to selected text.
+ * Produces a polite, professional reply appropriate for email, LinkedIn,
+ * or a forum — the user can copy and adapt it.
+ *
+ * @param {string} selectedText - the text being replied to
+ * @param {string} language     - "en" | "hinglish"
+ * @returns {string} assembled prompt
+ */
+function buildDraftPrompt(selectedText, language) {
+  return (
+    "You are a helpful writing assistant. Draft a polite and professional reply " +
+    "to the following text. The reply should be concise (2–4 sentences), " +
+    "suitable for email, LinkedIn, or a forum post. " +
+    "Do not include a subject line. Do not address it to a specific person. " +
+    "Return only the draft reply text.\n\n" +
+    "Text to reply to:\n" +
+    '"""\n' +
+    selectedText.trim() +
+    '\n"""\n\n' +
+    languageSuffix(language)
+  );
+}

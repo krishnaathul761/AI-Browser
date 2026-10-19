@@ -5,6 +5,7 @@ const clearGeminiBtn  = document.getElementById("clear-gemini-btn");
 const groqInput       = document.getElementById("groq-key");
 const groqHint        = document.getElementById("groq-hint");
 const clearGroqBtn    = document.getElementById("clear-groq-btn");
+const translateSelect = document.getElementById("translate-target");
 const statusEl        = document.getElementById("status");
 const providerStatus  = document.getElementById("provider-status");
 
@@ -107,6 +108,11 @@ function applySettings(settings) {
   const langRadio = form.querySelector('input[name="language"][value="' + language + '"]');
   if (langRadio) langRadio.checked = true;
 
+  // Translate target
+  if (translateSelect && settings.translateTarget) {
+    translateSelect.value = settings.translateTarget;
+  }
+
   updateProviderStatus(settings);
 }
 
@@ -149,6 +155,7 @@ form.addEventListener("submit", async (event) => {
     const patch = {
       language:          languageInput ? languageInput.value : "en",
       preferredProvider: providerInput ? providerInput.value : "auto",
+      translateTarget:   translateSelect ? translateSelect.value : "hi",
     };
 
     // Only include a key when the user typed one.

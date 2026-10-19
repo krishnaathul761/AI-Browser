@@ -553,22 +553,42 @@ async function runSummarise(forceRefresh) {
 
 summariseBtn.addEventListener("click", () => runSummarise(false));
 
-// ── Explain selection ─────────────────────────────────────────────────────────
+// ── Selection action (explain / translate / draft) ────────────────────────────
 
-explainBtn.addEventListener("click", async () => {
-  showBanner(""); // clear any previous banner
-  showLoading("Explaining…");
+/**
+ * Run a selection action by mode.
+ * Used by both the Explain button and the context menu pending action.
+ *
+ * @param {"explain"|"translate"|"draft"} mode
+ * @param {string} [selection] - pre-supplied text (from context menu stash)
+ */
+async function runSelectionAction(mode, selection) {
+  showBanner("");
+  showLoading(
+    mode === "explain"   ? "Explaining…"  :
+    mode === "translate" ? "Translating…" :
+    "Drafting reply…"
+  );
   explainBtn.disabled = true;
 
+  const payload = { mode };
+  if (selection) payload.selection = selection;
+
   try {
-    const data = await send("SELECTION_ACTION", { mode: "explain" });
+    const data = await send("SELECTION_ACTION", payload);
+
+    const labelMap = {
+      explain:   "Explanation",
+      translate: "Translation",
+      draft:     "Draft reply",
+    };
     lastAction = { type: "explain", data };
-    showResult({ label: "Explanation", body: data.result, kind: "explain" });
+    showResult({ label: labelMap[mode] || "Result", body: data.result });
+
   } catch (err) {
     const msg = err.message || "Something went wrong.";
-
     if (msg === "NO_SELECTION") {
-      showResultError("Select some text on the page first, then press Explain selection.");
+      showResultError("Select some text on the page first.");
       return;
     }
     if (msg === "MISSING_KEY") {
@@ -580,7 +600,9 @@ explainBtn.addEventListener("click", async () => {
   } finally {
     explainBtn.disabled = false;
   }
-});
+}
+
+explainBtn.addEventListener("click", () => runSelectionAction("explain"));
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 
@@ -714,6 +736,22 @@ async function loadSettings() {
     showBanner("Add a Gemini or Groq API key in Settings to use AI features.", "settings");
   } else {
     showBanner("");
+  }
+
+  // Check if the panel was opened via right-click context menu.
+  // If so, switch to Summarise tab (where results render) and run the action.
+  try {
+    const data = await send("CONTEXT_MENU_GET", {});
+    if (data && data.pending) {
+      const { mode, selection } = data.pending;
+      // Switch to Summarise tab so result area is visible.
+      const summariseTab = document.getElementById("tab-summarise");
+      if (summariseTab) summariseTab.click();
+      // Run after a short tick so the tab switch renders first.
+      setTimeout(() => runSelectionAction(mode, selection), 50);
+    }
+  } catch (_e) {
+    // Pending action check is best-effort.
   }
 }
 
