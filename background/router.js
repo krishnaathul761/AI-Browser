@@ -413,18 +413,41 @@ async function handleSummaryYouTube(requestId, message) {
 
   // Build prompt and call Gemini Flash (Gemini-only — YouTube URL not supported by Groq).
   // The video URL is sent as a fileData part, not in the text prompt.
+  // Retries up to 3 times with exponential backoff on 503 / network errors.
   const prompt = buildYouTubePrompt(settings.language);
 
   let rawText;
-  try {
-    rawText = await generateContentWithVideo(
-      GEMINI_FLASH,
-      canonicalUrl,
-      prompt,
-      settings.geminiApiKey
-    );
-  } catch (err) {
-    return fail(requestId, geminiErrorMessage(err));
+  let lastErr;
+  const delays = [1500, 3000, 6000]; // ms between retries
+
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      rawText = await generateContentWithVideo(
+        GEMINI_FLASH,
+        canonicalUrl,
+        prompt,
+        settings.geminiApiKey
+      );
+      lastErr = null;
+      break; // success — exit retry loop
+    } catch (err) {
+      lastErr = err;
+      // Only retry on overload / server errors. Auth errors fail immediately.
+      const retryable =
+        err.code === "NETWORK_ERROR" ||
+        (err.code === "API_ERROR" && (err.status === 503 || err.status === 500 || err.status === 529));
+
+      if (!retryable || attempt === delays.length) {
+        break; // not retryable or out of attempts
+      }
+
+      // Wait before next attempt.
+      await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+    }
+  }
+
+  if (lastErr) {
+    return fail(requestId, geminiErrorMessage(lastErr));
   }
 
   // Parse the structured JSON response.
