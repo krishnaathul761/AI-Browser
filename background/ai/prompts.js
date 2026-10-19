@@ -153,3 +153,35 @@ function buildTranslatePrompt(fields, language) {
     JSON.stringify(fields) + "\n"
   );
 }
+
+/**
+ * Grounded page chat — answers questions using only the page context.
+ *
+ * @param {{ title: string, url: string, text: string }} pageContext
+ * @param {{ role: "user"|"assistant", text: string }[]} history - prior turns
+ * @param {string} userMessage - the new user question
+ * @param {string} language    - "en" | "hinglish"
+ * @returns {string} assembled prompt
+ */
+function buildChatPrompt(pageContext, history, userMessage, language) {
+  const historyText = history.length > 0
+    ? history.map((m) => (m.role === "user" ? "User: " : "Assistant: ") + m.text).join("\n") + "\n"
+    : "";
+
+  return (
+    "You are a helpful reading assistant. Answer the user's question using ONLY " +
+    "the page content provided below. Do not use outside knowledge.\n" +
+    "If the answer is not in the page content, say clearly: " +
+    '"I could not find that information on this page."\n' +
+    "Be concise and direct. Do not repeat the question.\n\n" +
+    "Page title: " + (pageContext.title || "Unknown") + "\n" +
+    "Page URL: " + (pageContext.url || "") + "\n\n" +
+    "Page content:\n" +
+    '"""\n' +
+    (pageContext.text || "").trim().slice(0, 16000) +
+    '\n"""\n\n' +
+    (historyText ? "Conversation so far:\n" + historyText + "\n" : "") +
+    "User: " + userMessage.trim() + "\n\n" +
+    languageSuffix(language)
+  );
+}

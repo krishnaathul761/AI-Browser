@@ -130,6 +130,12 @@ async function routeMessage(message, _sender) {
     case "TRANSLATE_RESULT":
       return handleTranslateResult(requestId, message);
 
+    case "CHAT_SEND":
+      return handleChatSend(requestId, message);
+
+    case "CHAT_RESET":
+      return handleChatReset(requestId, message);
+
     default:
       return fail(requestId, "Unknown message type");
   }
@@ -694,4 +700,137 @@ async function handleTranslateResult(requestId, message) {
   }
 
   return ok(requestId, result);
+}
+
+// ── Chat state ────────────────────────────────────────────────────────────────
+//
+// Keyed by tabId. Resets automatically when the page URL changes.
+// Shape: { [tabId]: { messages: [{role, text}], pageUrl: string } }
+//
+// Stored in memory only (SW can sleep — if the SW wakes with no state,
+// the panel detects the reset and shows a "context lost" message).
+// Full persistence is a Phase 3 enhancement.
+
+const chatByTab = {};
+const CHAT_MAX_HISTORY = 20; // keep last 20 turns (10 pairs)
+
+// ── CHAT_SEND ─────────────────────────────────────────────────────────────────
+
+/**
+ * Handle a user chat message.
+ *
+ * Payload shape: { message: string, tabId?: number }
+ *
+ * Success data: { reply: string, resetContext: boolean }
+ *   resetContext: true when we detected a URL change and cleared history.
+ */
+async function handleChatSend(requestId, message) {
+  const payload     = message && message.payload;
+  const userMessage = payload && payload.message;
+
+  if (!userMessage || !userMessage.trim()) {
+    return fail(requestId, "Empty message.");
+  }
+
+  // Resolve tab.
+  const tabId = await resolveTabId(payload && payload.tabId);
+  if (tabId === null) {
+    return fail(requestId, "No active tab found.");
+  }
+
+  // Get current tab URL to detect navigation.
+  let currentUrl = "";
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    currentUrl = (tab && tab.url) || "";
+  } catch (_e) {}
+
+  if (isRestrictedUrl(currentUrl)) {
+    return fail(requestId, "RESTRICTED_PAGE");
+  }
+
+  // Initialise or reset chat state for this tab.
+  let resetContext = false;
+  if (!chatByTab[tabId] || chatByTab[tabId].pageUrl !== currentUrl) {
+    chatByTab[tabId] = { messages: [], pageUrl: currentUrl };
+    resetContext = chatByTab[tabId] && chatByTab[tabId].messages.length > 0;
+  }
+
+  const chat = chatByTab[tabId];
+
+  // Extract page context via content script.
+  let pageContext = null;
+  try {
+    const reply = await chrome.tabs.sendMessage(tabId, {
+      type: "EXTRACT_ARTICLE",
+      requestId: uuid(),
+    });
+    if (reply && reply.ok && reply.data) {
+      pageContext = {
+        title: reply.data.title || "",
+        url:   currentUrl,
+        text:  reply.data.text  || "",
+      };
+    }
+  } catch (_e) {}
+
+  if (!pageContext || !pageContext.text.trim()) {
+    pageContext = {
+      title: currentUrl,
+      url:   currentUrl,
+      text:  "",
+    };
+  }
+
+  // Gate on API key.
+  const settings = await readSettings();
+  if (!settings.geminiApiKey && !settings.groqApiKey) {
+    return fail(requestId, "MISSING_KEY");
+  }
+
+  // Build prompt with history.
+  const prompt = buildChatPrompt(
+    pageContext,
+    chat.messages.slice(-CHAT_MAX_HISTORY),
+    userMessage.trim(),
+    settings.language
+  );
+
+  let reply;
+  try {
+    reply = await callAI({ model: GEMINI_FLASH_LITE, prompt, settings });
+  } catch (err) {
+    return fail(requestId, geminiErrorMessage(err));
+  }
+
+  // Append to history.
+  chat.messages.push({ role: "user",      text: userMessage.trim() });
+  chat.messages.push({ role: "assistant", text: reply.trim() });
+
+  // Cap history length.
+  if (chat.messages.length > CHAT_MAX_HISTORY * 2) {
+    chat.messages = chat.messages.slice(-CHAT_MAX_HISTORY * 2);
+  }
+
+  return ok(requestId, {
+    reply:        reply.trim(),
+    resetContext,
+    pageTitle:    pageContext.title,
+    hasPageText:  Boolean(pageContext.text.trim()),
+  });
+}
+
+// ── CHAT_RESET ────────────────────────────────────────────────────────────────
+
+/**
+ * Explicitly clear chat history for a tab (e.g. user presses "New chat").
+ * Payload shape: { tabId?: number }
+ */
+async function handleChatReset(requestId, message) {
+  const payload = message && message.payload;
+  const tabId   = await resolveTabId(payload && payload.tabId);
+  if (tabId !== null && chatByTab[tabId]) {
+    delete chatByTab[tabId];
+  }
+  return ok(requestId, { reset: true });
 }

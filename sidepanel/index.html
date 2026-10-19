@@ -31,7 +31,7 @@
         <button type="button" class="tab is-active" data-tab="summarise" id="tab-summarise">
           Summarise
         </button>
-        <button type="button" class="tab" data-tab="chat" disabled title="Coming in Week 2">Chat</button>
+        <button type="button" class="tab" data-tab="chat" id="tab-chat">Chat</button>
         <button type="button" class="tab" data-tab="agent" disabled title="Coming in Week 3">Agent</button>
         <button type="button" class="tab" data-tab="skills" disabled title="Coming in Week 4">Skills</button>
       </nav>
@@ -61,6 +61,40 @@
           <!-- Result area for explain — populated after an AI call -->
           <div id="result-area" hidden></div>
         </section>
+
+        <!-- ── Chat view (Slice 2.1) ──────────────────────────────── -->
+        <section id="view-chat" class="view" data-view="chat" hidden>
+          <div class="chat-disclaimer" id="chat-disclaimer">
+            <span class="chat-disclaimer-icon">📄</span>
+            Answers come only from this page — not from general knowledge.
+          </div>
+
+          <div class="chat-messages" id="chat-messages" role="log" aria-live="polite">
+            <div class="chat-empty" id="chat-empty">
+              <p>Ask anything about the current page.</p>
+            </div>
+          </div>
+
+          <div class="chat-composer">
+            <div class="chat-input-row">
+              <textarea
+                id="chat-input"
+                class="chat-input"
+                rows="1"
+                placeholder="Ask about this page…"
+                aria-label="Chat message"
+                maxlength="2000"
+              ></textarea>
+              <button type="button" class="chat-send-btn" id="chat-send-btn" aria-label="Send">
+                ↑
+              </button>
+            </div>
+            <div class="chat-actions-row">
+              <button type="button" class="link-btn" id="chat-reset-btn">New chat</button>
+            </div>
+          </div>
+        </section>
+
       </main>
     </div>
     <script src="../lib/utils.js"></script>

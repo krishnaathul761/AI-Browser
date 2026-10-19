@@ -582,6 +582,129 @@ explainBtn.addEventListener("click", async () => {
   }
 });
 
+// ── Chat ──────────────────────────────────────────────────────────────────────
+
+const chatMessages  = document.getElementById("chat-messages");
+const chatEmpty     = document.getElementById("chat-empty");
+const chatInput     = document.getElementById("chat-input");
+const chatSendBtn   = document.getElementById("chat-send-btn");
+const chatResetBtn  = document.getElementById("chat-reset-btn");
+
+/** Append a bubble to the chat message list and scroll into view. */
+function appendBubble(text, role) {
+  chatEmpty.hidden = true;
+
+  const bubble = document.createElement("div");
+  bubble.className = "chat-bubble chat-bubble--" + role;
+  bubble.textContent = text;
+  chatMessages.appendChild(bubble);
+  bubble.scrollIntoView({ block: "end", behavior: "smooth" });
+  return bubble;
+}
+
+/** Show the three-dot thinking animation while waiting for a reply. */
+function appendThinking() {
+  chatEmpty.hidden = true;
+  const bubble = document.createElement("div");
+  bubble.className = "chat-bubble chat-bubble--thinking";
+  for (let i = 0; i < 3; i++) {
+    const dot = document.createElement("span");
+    bubble.appendChild(dot);
+  }
+  chatMessages.appendChild(bubble);
+  bubble.scrollIntoView({ block: "end", behavior: "smooth" });
+  return bubble;
+}
+
+/** Show a small centred notice (e.g. "Context reset — new page"). */
+function appendNotice(text) {
+  const notice = document.createElement("div");
+  notice.className = "chat-notice";
+  notice.textContent = text;
+  chatMessages.appendChild(notice);
+  notice.scrollIntoView({ block: "end", behavior: "smooth" });
+}
+
+/** Clear all chat bubbles and show the empty state. */
+function clearChatUI() {
+  // Remove everything except the chat-empty div.
+  Array.from(chatMessages.children).forEach((child) => {
+    if (child !== chatEmpty) child.remove();
+  });
+  chatEmpty.hidden = false;
+}
+
+/** Send the current input as a chat message. */
+async function sendChatMessage() {
+  const text = chatInput.value.trim();
+  if (!text) return;
+
+  chatInput.value = "";
+  chatInput.style.height = "auto";
+  chatSendBtn.disabled = true;
+
+  appendBubble(text, "user");
+  const thinkingBubble = appendThinking();
+
+  try {
+    const data = await send("CHAT_SEND", { message: text });
+
+    thinkingBubble.remove();
+
+    // If the backend detected a URL change and reset context, show a notice.
+    if (data.resetContext) {
+      appendNotice("New page detected — chat context was reset.");
+    }
+
+    // Warn if the page had no extractable text.
+    if (!data.hasPageText) {
+      appendNotice("This page has no readable text — answers may be limited.");
+    }
+
+    appendBubble(data.reply, "assistant");
+
+  } catch (err) {
+    thinkingBubble.remove();
+    const msg = err.message || "Something went wrong.";
+
+    if (msg === "MISSING_KEY") {
+      appendBubble("Add a Gemini or Groq API key in Settings to use chat.", "error");
+    } else if (msg === "RESTRICTED_PAGE") {
+      appendBubble("Chat is not available on this page.", "error");
+    } else {
+      appendBubble(msg, "error");
+    }
+  } finally {
+    chatSendBtn.disabled = false;
+    chatInput.focus();
+  }
+}
+
+// Send on button click.
+chatSendBtn.addEventListener("click", sendChatMessage);
+
+// Send on Enter (Shift+Enter inserts a newline).
+chatInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendChatMessage();
+  }
+});
+
+// Auto-resize the textarea as the user types.
+chatInput.addEventListener("input", () => {
+  chatInput.style.height = "auto";
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
+});
+
+// New chat button — clears UI and tells the background to reset history.
+chatResetBtn.addEventListener("click", async () => {
+  clearChatUI();
+  try {
+    await send("CHAT_RESET", {});
+  } catch (_e) {}
+});
+
 // ── Load settings on startup ──────────────────────────────────────────────────
 
 async function loadSettings() {
