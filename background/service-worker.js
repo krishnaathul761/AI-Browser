@@ -68,7 +68,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const selection = (info.selectionText || "").trim();
   if (!selection) return;
 
-  // Stash the pending action so the panel can pick it up.
+  // Open the side panel FIRST — before any await — so the user gesture
+  // context is still active. Chrome requires sidePanel.open() to be called
+  // synchronously within the gesture handler.
+  try {
+    if (tab && tab.windowId) {
+      chrome.sidePanel.open({ windowId: tab.windowId });
+    }
+  } catch (_err) {
+    // Restricted pages cannot host a side panel.
+  }
+
+  // Now stash the pending action (after the open call).
   const pending = {
     mode,
     selection,
@@ -76,17 +87,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     tabId: (tab && tab.id) || null,
   };
 
-  // Write stash first, then open the panel.
   await chrome.storage.local.set({ pendingContextAction: pending });
-
-  // Open the side panel — Chrome handles this gracefully if already open.
-  try {
-    if (tab && tab.windowId) {
-      await chrome.sidePanel.open({ windowId: tab.windowId });
-    }
-  } catch (_err) {
-    // Restricted pages (chrome://, Web Store) cannot host a side panel.
-  }
 
   // Also notify the panel directly via message in case it is already open.
   // If the panel is closed the message will fail silently — the onChanged
