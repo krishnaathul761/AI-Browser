@@ -68,7 +68,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const selection = (info.selectionText || "").trim();
   if (!selection) return;
 
-  // Stash the pending action so the panel can pick it up on load.
+  // Stash the pending action so the panel can pick it up.
   const pending = {
     mode,
     selection,
@@ -76,15 +76,29 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     tabId: (tab && tab.id) || null,
   };
 
+  // Write stash first, then open the panel.
   await chrome.storage.local.set({ pendingContextAction: pending });
 
-  // Open the side panel.
+  // Open the side panel — Chrome handles this gracefully if already open.
   try {
     if (tab && tab.windowId) {
       await chrome.sidePanel.open({ windowId: tab.windowId });
     }
   } catch (_err) {
     // Restricted pages (chrome://, Web Store) cannot host a side panel.
+  }
+
+  // Also notify the panel directly via message in case it is already open.
+  // If the panel is closed the message will fail silently — the onChanged
+  // listener in panel.js will handle it when the panel opens.
+  try {
+    await chrome.runtime.sendMessage({
+      type: "CONTEXT_ACTION_READY",
+      requestId: uuid(),
+      payload: pending,
+    });
+  } catch (_err) {
+    // Panel not open yet — that's fine, onChanged will fire.
   }
 });
 

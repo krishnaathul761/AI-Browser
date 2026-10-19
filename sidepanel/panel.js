@@ -739,30 +739,63 @@ async function loadSettings() {
   }
 
   // Check if the panel was opened via right-click context menu.
-  // If so, switch to Summarise tab (where results render) and run the action.
+  checkAndRunPendingAction();
+}
+
+settingsBtn.addEventListener("click", openSettings);
+
+// ── Pending context action ────────────────────────────────────────────────────
+
+// Listen for direct SW push when the panel is already open.
+if (globalThis.chrome && chrome.runtime && chrome.runtime.onMessage) {
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message && message.type === "CONTEXT_ACTION_READY" && message.payload) {
+      const { mode, selection } = message.payload;
+      const summariseTab = document.getElementById("tab-summarise");
+      if (summariseTab && !summariseTab.classList.contains("is-active")) {
+        summariseTab.click();
+      }
+      setTimeout(() => runSelectionAction(mode, selection), 60);
+    }
+    return false;
+  });
+}
+
+/**
+ * Read and immediately clear any pending context menu action from storage.
+ * Runs on panel startup AND whenever storage changes (covers "already open" case).
+ */
+async function checkAndRunPendingAction() {
   try {
     const data = await send("CONTEXT_MENU_GET", {});
     if (data && data.pending) {
       const { mode, selection } = data.pending;
       // Switch to Summarise tab so result area is visible.
       const summariseTab = document.getElementById("tab-summarise");
-      if (summariseTab) summariseTab.click();
-      // Run after a short tick so the tab switch renders first.
-      setTimeout(() => runSelectionAction(mode, selection), 50);
+      if (summariseTab && !summariseTab.classList.contains("is-active")) {
+        summariseTab.click();
+      }
+      // Small tick so any tab-switch animation settles first.
+      setTimeout(() => runSelectionAction(mode, selection), 60);
     }
   } catch (_e) {
-    // Pending action check is best-effort.
+    // Best-effort — never block the panel from loading.
   }
 }
 
-settingsBtn.addEventListener("click", openSettings);
-
 if (globalThis.chrome && chrome.storage && chrome.storage.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local" || !changes.settings) {
-      return;
+    if (area !== "local") return;
+
+    // Settings changed — reload language / banner state.
+    if (changes.settings) {
+      loadSettings().catch(() => {});
     }
-    loadSettings().catch(() => {});
+
+    // A new context menu action was stashed while the panel was already open.
+    if (changes.pendingContextAction && changes.pendingContextAction.newValue) {
+      checkAndRunPendingAction();
+    }
   });
 }
 
