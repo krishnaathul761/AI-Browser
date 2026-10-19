@@ -751,9 +751,13 @@ async function handleChatSend(requestId, message) {
 
   // Initialise or reset chat state for this tab.
   let resetContext = false;
-  if (!chatByTab[tabId] || chatByTab[tabId].pageUrl !== currentUrl) {
+  const existingChat = chatByTab[tabId];
+  const urlChanged = existingChat && existingChat.pageUrl !== currentUrl;
+
+  if (!existingChat || urlChanged) {
+    // Only flag a reset if there was actual history to lose.
+    resetContext = urlChanged && existingChat.messages.length > 0;
     chatByTab[tabId] = { messages: [], pageUrl: currentUrl };
-    resetContext = chatByTab[tabId] && chatByTab[tabId].messages.length > 0;
   }
 
   const chat = chatByTab[tabId];

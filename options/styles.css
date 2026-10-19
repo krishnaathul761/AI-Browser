@@ -189,3 +189,28 @@ button[type="submit"] {
 button[type="submit"]:hover {
   background: var(--teal-ink);
 }
+
+.key-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.clear-key-btn {
+  border: 0;
+  background: none;
+  color: var(--warn-ink);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 0;
+  white-space: nowrap;
+  text-decoration: underline;
+  flex-shrink: 0;
+}
+
+.clear-key-btn:hover {
+  opacity: 0.75;
+}

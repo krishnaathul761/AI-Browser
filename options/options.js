@@ -1,8 +1,10 @@
 const form            = document.getElementById("settings-form");
 const geminiInput     = document.getElementById("gemini-key");
 const geminiHint      = document.getElementById("key-hint");
+const clearGeminiBtn  = document.getElementById("clear-gemini-btn");
 const groqInput       = document.getElementById("groq-key");
 const groqHint        = document.getElementById("groq-hint");
+const clearGroqBtn    = document.getElementById("clear-groq-btn");
 const statusEl        = document.getElementById("status");
 const providerStatus  = document.getElementById("provider-status");
 
@@ -84,6 +86,7 @@ function applySettings(settings) {
   geminiHint.textContent = settings.geminiApiKey
     ? "Key saved. Leave blank to keep it, or paste a new one to replace it."
     : "Google AI Studio · free tier available";
+  clearGeminiBtn.hidden = !settings.geminiApiKey;
 
   groqInput.value = "";
   groqInput.placeholder = settings.groqApiKey
@@ -92,6 +95,7 @@ function applySettings(settings) {
   groqHint.textContent = settings.groqApiKey
     ? "Key saved. Leave blank to keep it, or paste a new one to replace it."
     : "console.groq.com · free tier available";
+  clearGroqBtn.hidden = !settings.groqApiKey;
 
   // Provider radio
   const provider = settings.preferredProvider || "auto";
@@ -116,6 +120,23 @@ form.querySelectorAll('input[name="preferredProvider"]').forEach((radio) => {
     }).catch(() => {});
   });
 });
+
+// ── Clear key buttons ─────────────────────────────────────────────────────────
+
+async function clearKey(keyName) {
+  try {
+    const patch = {};
+    patch[keyName] = "";
+    const saved = await send("SETTINGS_SET", patch);
+    applySettings(saved);
+    setStatus("Key cleared.", "ok");
+  } catch (err) {
+    setStatus(err.message || "Could not clear key.", "err");
+  }
+}
+
+clearGeminiBtn.addEventListener("click", () => clearKey("geminiApiKey"));
+clearGroqBtn.addEventListener("click",   () => clearKey("groqApiKey"));
 
 // ── Save ──────────────────────────────────────────────────────────────────────
 
