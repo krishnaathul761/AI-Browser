@@ -7,6 +7,17 @@ const summaryArea = document.getElementById("summary-area");
 const explainBtn = document.getElementById("explain-btn");
 const resultArea = document.getElementById("result-area");
 
+// ── Last-action state (used to re-run on language toggle) ─────────────────────
+//
+// Tracks what the user last ran so the toggle can replay it in the new language.
+// Shape:
+//   { type: "summary" }                          — re-run SUMMARY_ARTICLE
+//   { type: "youtube", url: string }             — re-run SUMMARY_YOUTUBE
+//   { type: "explain", selection: string }       — re-run SELECTION_ACTION
+//   null                                         — nothing to rerun
+//
+let lastAction = null;
+
 // ── Banner ────────────────────────────────────────────────────────────────────
 
 function showBanner(message, kind) {
@@ -69,6 +80,10 @@ function applyLanguage(language) {
 async function setLanguage(language) {
   applyLanguage(language);
   await send("SETTINGS_SET", { language: language });
+  // Re-run the last action in the new language, if there is one.
+  if (lastAction) {
+    await rerunLastAction();
+  }
 }
 
 langButtons.forEach((btn) => {
@@ -82,6 +97,53 @@ langButtons.forEach((btn) => {
   });
 });
 
+// ── Rerun last action in new language ────────────────────────────────────────
+
+/**
+ * Re-executes the last AI call using the now-saved language setting.
+ * Shows a loading indicator in the relevant area while running.
+ */
+async function rerunLastAction() {
+  if (!lastAction) return;
+
+  try {
+    if (lastAction.type === "summary" || lastAction.type === "youtube") {
+      // Show loading in the summary area.
+      summaryArea.hidden = false;
+      summaryArea.innerHTML = "";
+      const loadingDiv = document.createElement("div");
+      loadingDiv.className = "loading-state";
+      loadingDiv.textContent = "Translating summary…";
+      summaryArea.appendChild(loadingDiv);
+      summariseBtn.disabled = true;
+
+      const data = await send("SUMMARY_ARTICLE", {});
+      showSummary(data);
+    } else if (lastAction.type === "explain") {
+      // Show loading in the result area.
+      showLoading("Translating explanation…");
+      explainBtn.disabled = true;
+
+      const data = await send("SELECTION_ACTION", { mode: "explain" });
+      showResult({ label: "Explanation", body: data.result, kind: "explain" });
+    }
+  } catch (err) {
+    // Rerun failures are silent — the existing result stays visible.
+    // Only clear loading states that may be spinning.
+    if (lastAction.type === "summary" || lastAction.type === "youtube") {
+      summaryArea.innerHTML = "";
+      summaryArea.hidden = true;
+    } else {
+      resultArea.innerHTML = "";
+      resultArea.hidden = true;
+    }
+    showBanner(err.message || "Could not re-run in new language. Try again.");
+  } finally {
+    summariseBtn.disabled = false;
+    explainBtn.disabled = false;
+  }
+}
+
 // ── Tab switching ─────────────────────────────────────────────────────────────
 
 tabButtons.forEach((btn) => {
@@ -92,6 +154,8 @@ tabButtons.forEach((btn) => {
     document.querySelectorAll(".view").forEach((view) => {
       view.hidden = view.getAttribute("data-view") !== target;
     });
+    // Clear last action when switching tabs — result belongs to the previous tab.
+    lastAction = null;
   });
 });
 
@@ -408,6 +472,7 @@ summariseBtn.addEventListener("click", async () => {
 
   try {
     const data = await send("SUMMARY_ARTICLE", {});
+    lastAction = { type: data.videoId ? "youtube" : "summary" };
     showSummary(data);
   } catch (err) {
     const msg = err.message || "Something went wrong.";
@@ -444,6 +509,7 @@ explainBtn.addEventListener("click", async () => {
 
   try {
     const data = await send("SELECTION_ACTION", { mode: "explain" });
+    lastAction = { type: "explain" };
     showResult({ label: "Explanation", body: data.result, kind: "explain" });
   } catch (err) {
     const msg = err.message || "Something went wrong.";
