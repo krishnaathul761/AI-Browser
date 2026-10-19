@@ -79,21 +79,21 @@ function applyLanguage(language) {
 
 async function setLanguage(language) {
   applyLanguage(language);
-  await send("SETTINGS_SET", { language: language });
-  // Re-run the last action in the new language, if there is one.
+  // Save language setting — fire and don't await so a slow SW wake doesn't
+  // block the rerun. Errors are swallowed here; the toggle UI already updated.
+  send("SETTINGS_SET", { language: language }).catch(() => {});
+  // Re-run the last action in the new language immediately.
   if (lastAction) {
     await rerunLastAction();
   }
 }
 
 langButtons.forEach((btn) => {
-  btn.addEventListener("click", async () => {
+  btn.addEventListener("click", (evt) => {
     const language = btn.getAttribute("data-lang");
-    try {
-      await setLanguage(language);
-    } catch (err) {
-      showBanner(err.message || "Could not save language.");
-    }
+    setLanguage(language).catch((err) => {
+      showBanner(err.message || "Could not switch language.");
+    });
   });
 });
 
