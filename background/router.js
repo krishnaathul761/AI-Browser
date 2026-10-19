@@ -319,8 +319,14 @@ async function handleSummaryArticle(requestId, message) {
     return fail(requestId, "MISSING_KEY");
   }
 
-  // 3. Build prompt → AI with Groq fallback. 600 tokens covers the JSON structure.
-  const prompt = buildSummaryPrompt(articleData, settings.language);
+  // 3. Build prompt → AI with Groq fallback.
+  // Groq has an 8K TPM cap — trim article text to stay well within budget.
+  // Gemini has a 1M context window so no trimming needed there, but we
+  // apply the same trim for consistency and to keep prompts snappy.
+  const trimmedArticle = Object.assign({}, articleData, {
+    text: articleData.text.slice(0, 6000), // ~1.5k tokens input, leaves room for output
+  });
+  const prompt = buildSummaryPrompt(trimmedArticle, settings.language);
 
   let rawText;
   try {
@@ -821,8 +827,12 @@ async function handleChatSend(requestId, message) {
   }
 
   // Build prompt with history.
+  // Trim page text to 5k chars (~1.25k tokens) to stay within Groq's 8K TPM.
+  const trimmedContext = Object.assign({}, pageContext, {
+    text: (pageContext.text || "").slice(0, 5000),
+  });
   const prompt = buildChatPrompt(
-    pageContext,
+    trimmedContext,
     chat.messages.slice(-CHAT_MAX_HISTORY),
     userMessage.trim(),
     settings.language

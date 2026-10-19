@@ -20,10 +20,11 @@
  *   NETWORK_ERROR — fetch threw
  */
 
-// Groq production model: Llama 3.3 70B Versatile.
-// Strong quality for summaries, chat, and translation.
-// Free tier: 30 RPM, 131K token context window, 280 tok/s.
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+// Groq model: GPT-OSS 20B on Groq hardware.
+// Fastest available on this account (1000 tok/s), OpenAI-compatible format.
+// Free tier: 30 RPM, 1K RPD, 8K TPM, 200K TPD.
+// Text only — never pass video or image data.
+const GROQ_MODEL = "openai/gpt-oss-20b";
 const GROQ_API_BASE = "https://api.groq.com/openai/v1/chat/completions";
 
 /**
