@@ -1,4 +1,4 @@
-importScripts("../lib/utils.js", "ai/prompts.js", "ai/gemini.js", "ai/groq.js", "ai/ai.js", "router.js");
+importScripts("../lib/utils.js", "ai/prompts.js", "ai/gemini.js", "ai/groq.js", "ai/ai.js", "ai/cache.js", "router.js");
 
 async function enableActionOpensPanel() {
   try {

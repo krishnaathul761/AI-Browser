@@ -126,3 +126,30 @@ function buildYouTubePrompt(language) {
     languageSuffix(language)
   );
 }
+
+/**
+ * Translate a summary result's text fields into the target language.
+ *
+ * Used by the language toggle so we never re-call Gemini Flash just to
+ * change the language — we send the already-fetched text to Groq/Flash-Lite
+ * for a cheap translation instead.
+ *
+ * The model MUST return the same JSON shape it receives.
+ * For articles: { tldr, keyPoints, nextSteps }
+ * For YouTube:  { tldr, keyPoints, nextSteps, timestamps? (labels only) }
+ *
+ * @param {object} fields  - the text fields to translate
+ * @param {string} language - "en" | "hinglish"
+ * @returns {string} assembled prompt
+ */
+function buildTranslatePrompt(fields, language) {
+  return (
+    "You are a translation assistant. Translate the JSON content below into the target language.\n" +
+    "Return ONLY valid JSON with exactly the same keys and structure — no extra keys, no markdown fences.\n" +
+    "Translate only the text values. Do not translate JSON keys.\n" +
+    "For arrays, translate each item in place.\n\n" +
+    "Target language: " + languageSuffix(language) + "\n\n" +
+    "JSON to translate:\n" +
+    JSON.stringify(fields) + "\n"
+  );
+}

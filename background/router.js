@@ -127,6 +127,9 @@ async function routeMessage(message, _sender) {
     case "SUMMARY_YOUTUBE":
       return handleSummaryYouTube(requestId, message);
 
+    case "TRANSLATE_RESULT":
+      return handleTranslateResult(requestId, message);
+
     default:
       return fail(requestId, "Unknown message type");
   }
@@ -244,6 +247,15 @@ async function handleSummaryArticle(requestId, message) {
     return handleSummaryYouTube(requestId, { payload: { url: tabUrl } });
   }
 
+  // ── Cache check ───────────────────────────────────────────────────────────
+  const forceRefresh = payload && payload.forceRefresh === true;
+  if (!forceRefresh) {
+    const cached = await getCachedSummary(tabUrl);
+    if (cached) {
+      return ok(requestId, Object.assign({}, cached, { fromCache: true }));
+    }
+  }
+
   // 1. Extract article text from the content script.
   let articleData;
   try {
@@ -290,13 +302,18 @@ async function handleSummaryArticle(requestId, message) {
     return ok(requestId, { raw: rawText, parseError: true, title: articleData.title });
   }
 
-  return ok(requestId, {
+  const result = {
     tldr: parsed.tldr,
     keyPoints: parsed.keyPoints,
     nextSteps: parsed.nextSteps,
     isFallback: articleData.isFallback || false,
     title: articleData.title || "",
-  });
+  };
+
+  // Cache by tab URL so repeat views are free.
+  setCachedSummary(tabUrl, result).catch(() => {});
+
+  return ok(requestId, result);
 }
 
 /**
@@ -405,6 +422,15 @@ async function handleSummaryYouTube(requestId, message) {
   // Normalise to a canonical watch URL so Gemini can always resolve it.
   const canonicalUrl = "https://www.youtube.com/watch?v=" + videoId;
 
+  // ── Cache check — videos never change, cache is always valid ─────────────
+  const forceRefreshYt = payload && payload.forceRefresh === true;
+  if (!forceRefreshYt) {
+    const cached = await getCachedSummary(canonicalUrl);
+    if (cached) {
+      return ok(requestId, Object.assign({}, cached, { fromCache: true }));
+    }
+  }
+
   // Gate on API key — YouTube requires Gemini specifically.
   const settings = await readSettings();
   if (!settings.geminiApiKey) {
@@ -463,14 +489,19 @@ async function handleSummaryYouTube(requestId, message) {
     });
   }
 
-  return ok(requestId, {
+  const ytResult = {
     tldr: parsed.tldr,
     keyPoints: parsed.keyPoints,
     timestamps: parsed.timestamps,
     nextSteps: parsed.nextSteps,
     videoId,
     videoUrl: canonicalUrl,
-  });
+  };
+
+  // Cache — YouTube videos don't change, so this is always safe.
+  setCachedSummary(canonicalUrl, ytResult).catch(() => {});
+
+  return ok(requestId, ytResult);
 }
 
 /**
@@ -576,4 +607,91 @@ function isValidVideoId(id) {
  */
 function isYouTubeVideoUrl(url) {
   return extractYouTubeVideoId(url) !== null;
+}
+
+// ── TRANSLATE_RESULT ──────────────────────────────────────────────────────────
+
+/**
+ * Translate the text fields of a stored summary into the current language.
+ * Uses Groq (or Gemini Flash-Lite) — never burns the Gemini Flash quota.
+ *
+ * Payload shape:
+ *   {
+ *     fields: { tldr, keyPoints, nextSteps, timestamps? },
+ *     language: "en" | "hinglish"
+ *   }
+ *
+ * Success data: same shape as fields, with translated text.
+ */
+async function handleTranslateResult(requestId, message) {
+  const payload  = message && message.payload;
+  const fields   = payload && payload.fields;
+  const language = payload && payload.language;
+
+  if (!fields || !language) {
+    return fail(requestId, "Missing fields or language for translation.");
+  }
+
+  // English → just return the original fields unchanged (no API call needed).
+  if (language === "en") {
+    return ok(requestId, fields);
+  }
+
+  const settings = await readSettings();
+  if (!settings.geminiApiKey && !settings.groqApiKey) {
+    return fail(requestId, "MISSING_KEY");
+  }
+
+  // Build fields object — translate only text, keep timestamps seconds intact.
+  const fieldsToTranslate = {
+    tldr:      fields.tldr      || "",
+    keyPoints: fields.keyPoints || [],
+    nextSteps: fields.nextSteps || "",
+  };
+
+  // Translate timestamp labels separately if present.
+  if (fields.timestamps && fields.timestamps.length > 0) {
+    fieldsToTranslate.timestampLabels = fields.timestamps.map((t) => t.label);
+  }
+
+  const prompt = buildTranslatePrompt(fieldsToTranslate, language);
+
+  let rawText;
+  try {
+    // Prefer Groq for translation — cheap, fast, and saves Flash quota.
+    // Falls back to Flash-Lite if no Groq key or Groq fails.
+    rawText = await callAI({ model: GEMINI_FLASH_LITE, prompt, settings });
+  } catch (err) {
+    return fail(requestId, geminiErrorMessage(err));
+  }
+
+  // Parse the translated JSON.
+  let translated;
+  try {
+    let text = rawText.trim();
+    const fence = text.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/i);
+    if (fence) text = fence[1].trim();
+    translated = JSON.parse(text);
+  } catch (_e) {
+    // If translation JSON is malformed, return original untranslated fields.
+    return ok(requestId, fields);
+  }
+
+  // Merge translated text back with original structure.
+  const result = {
+    tldr:      typeof translated.tldr === "string" ? translated.tldr : fields.tldr,
+    keyPoints: Array.isArray(translated.keyPoints)  ? translated.keyPoints : fields.keyPoints,
+    nextSteps: typeof translated.nextSteps === "string" ? translated.nextSteps : fields.nextSteps,
+  };
+
+  // Re-attach timestamp labels if they were translated.
+  if (fields.timestamps && fields.timestamps.length > 0) {
+    const labels = Array.isArray(translated.timestampLabels) ? translated.timestampLabels : [];
+    result.timestamps = fields.timestamps.map((t, i) => ({
+      seconds: t.seconds,
+      label: labels[i] || t.label,
+    }));
+  }
+
+  return ok(requestId, result);
 }

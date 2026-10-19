@@ -9,12 +9,13 @@ const resultArea = document.getElementById("result-area");
 
 // ── Last-action state (used to re-run on language toggle) ─────────────────────
 //
-// Tracks what the user last ran so the toggle can replay it in the new language.
+// Stores the last result data so language toggle can translate it cheaply
+// via Groq instead of re-calling the full API.
+//
 // Shape:
-//   { type: "summary" }                          — re-run SUMMARY_ARTICLE
-//   { type: "youtube", url: string }             — re-run SUMMARY_YOUTUBE
-//   { type: "explain", selection: string }       — re-run SELECTION_ACTION
-//   null                                         — nothing to rerun
+//   { type: "summary"|"youtube", data: SummaryData }
+//   { type: "explain", data: { result: string } }
+//   null
 //
 let lastAction = null;
 
@@ -97,47 +98,75 @@ langButtons.forEach((btn) => {
   });
 });
 
-// ── Rerun last action in new language ────────────────────────────────────────
+// ── Translate last result in new language ─────────────────────────────────────
 
 /**
- * Re-executes the last AI call using the now-saved language setting.
- * Shows a loading indicator in the relevant area while running.
+ * Translates the stored last result into the new language via TRANSLATE_RESULT.
+ * Uses Groq for text — never re-calls Gemini Flash.
+ * Falls back to a full re-run if translation fails.
  */
 async function rerunLastAction() {
   if (!lastAction) return;
 
+  const { type, data } = lastAction;
+
   try {
-    if (lastAction.type === "summary" || lastAction.type === "youtube") {
-      // Show loading in the summary area.
+    if (type === "summary" || type === "youtube") {
       summaryArea.hidden = false;
       summaryArea.innerHTML = "";
       const loadingDiv = document.createElement("div");
       loadingDiv.className = "loading-state";
-      loadingDiv.textContent = "Translating summary…";
+      loadingDiv.textContent = "Translating…";
       summaryArea.appendChild(loadingDiv);
       summariseBtn.disabled = true;
 
-      const data = await send("SUMMARY_ARTICLE", {});
-      showSummary(data);
-    } else if (lastAction.type === "explain") {
-      // Show loading in the result area.
-      showLoading("Translating explanation…");
+      // Get current language from settings.
+      const settings = await send("SETTINGS_GET");
+      const language = settings.language || "en";
+
+      // Send just the text fields to translate — no video/article re-fetch.
+      const fields = {
+        tldr:       data.tldr,
+        keyPoints:  data.keyPoints,
+        nextSteps:  data.nextSteps,
+        timestamps: data.timestamps,
+      };
+
+      const translated = await send("TRANSLATE_RESULT", { fields, language });
+
+      // Merge translated fields back into the original data shape.
+      const newData = Object.assign({}, data, {
+        tldr:       translated.tldr,
+        keyPoints:  translated.keyPoints,
+        nextSteps:  translated.nextSteps,
+        timestamps: translated.timestamps || data.timestamps,
+        fromCache:  true,
+      });
+
+      // Update lastAction so next toggle also translates from latest.
+      lastAction = { type, data: newData };
+      showSummary(newData);
+
+    } else if (type === "explain") {
+      showLoading("Translating…");
       explainBtn.disabled = true;
 
-      const data = await send("SELECTION_ACTION", { mode: "explain" });
-      showResult({ label: "Explanation", body: data.result, kind: "explain" });
+      // For explanations, just re-run SELECTION_ACTION — it's Flash-Lite
+      // which is cheap and has 1,000 RPD. No separate translate needed.
+      const newData = await send("SELECTION_ACTION", { mode: "explain" });
+      lastAction = { type: "explain", data: newData };
+      showResult({ label: "Explanation", body: newData.result, kind: "explain" });
     }
+
   } catch (err) {
-    // Rerun failures are silent — the existing result stays visible.
-    // Only clear loading states that may be spinning.
-    if (lastAction.type === "summary" || lastAction.type === "youtube") {
+    if (type === "summary" || type === "youtube") {
       summaryArea.innerHTML = "";
       summaryArea.hidden = true;
     } else {
       resultArea.innerHTML = "";
       resultArea.hidden = true;
     }
-    showBanner(err.message || "Could not re-run in new language. Try again.");
+    showBanner(err.message || "Could not translate. Try again.");
   } finally {
     summariseBtn.disabled = false;
     explainBtn.disabled = false;
@@ -231,22 +260,24 @@ function showSummary(data) {
   summaryArea.hidden = false;
   summaryArea.innerHTML = "";
 
+  // Build a force-refresh handler for cached results.
+  const onRefresh = data.fromCache ? () => runSummarise(true) : null;
+
   // Route to the right renderer.
   if (data.videoId) {
-    showYouTubeSummary(data);
+    showYouTubeSummary(data, onRefresh);
   } else {
-    showArticleSummary(data);
+    showArticleSummary(data, onRefresh);
   }
 }
 
 // ── Article summary renderer ──────────────────────────────────────────────────
 
-function showArticleSummary(data) {
+function showArticleSummary(data, onRefresh) {
   const card = document.createElement("div");
   card.className = "summary-card";
 
-  // Header
-  const header = buildSummaryHeader("Summary", data.isFallback, buildCopyText(data));
+  const header = buildSummaryHeader("Summary", data.isFallback, buildCopyText(data), onRefresh);
   card.appendChild(header);
 
   // Raw fallback
@@ -267,12 +298,11 @@ function showArticleSummary(data) {
 
 // ── YouTube summary renderer ──────────────────────────────────────────────────
 
-function showYouTubeSummary(data) {
+function showYouTubeSummary(data, onRefresh) {
   const card = document.createElement("div");
   card.className = "summary-card";
 
-  // Header with YouTube badge
-  const header = buildSummaryHeader("YouTube Summary", false, buildYouTubeCopyText(data));
+  const header = buildSummaryHeader("YouTube Summary", false, buildYouTubeCopyText(data), onRefresh);
 
   const badge = document.createElement("span");
   badge.className = "yt-badge";
@@ -305,7 +335,7 @@ function showYouTubeSummary(data) {
 
 // ── Shared section builders ───────────────────────────────────────────────────
 
-function buildSummaryHeader(label, isFallback, copyText) {
+function buildSummaryHeader(label, isFallback, copyText, onRefresh) {
   const header = document.createElement("div");
   header.className = "result-header";
 
@@ -320,6 +350,23 @@ function buildSummaryHeader(label, isFallback, copyText) {
     warn.title = "Full article text could not be cleanly extracted — summary may include navigation or footer text.";
     warn.textContent = "approx.";
     header.appendChild(warn);
+  }
+
+  // Show cached indicator + refresh button when result came from cache.
+  if (onRefresh) {
+    const cachedBadge = document.createElement("span");
+    cachedBadge.className = "cached-badge";
+    cachedBadge.title = "Loaded from cache. Click ↺ to fetch a fresh summary.";
+    cachedBadge.textContent = "cached";
+    header.appendChild(cachedBadge);
+
+    const refreshBtn = document.createElement("button");
+    refreshBtn.type = "button";
+    refreshBtn.className = "refresh-btn";
+    refreshBtn.title = "Refresh — fetch a new summary";
+    refreshBtn.textContent = "↺";
+    refreshBtn.addEventListener("click", onRefresh);
+    header.appendChild(refreshBtn);
   }
 
   const copyBtn = document.createElement("button");
@@ -457,22 +504,26 @@ function buildYouTubeCopyText(data) {
   );
 }
 
-summariseBtn.addEventListener("click", async () => {
+// ── Summarise button ──────────────────────────────────────────────────────────
+
+/**
+ * Run SUMMARY_ARTICLE. Pass forceRefresh=true to bypass the cache.
+ */
+async function runSummarise(forceRefresh) {
   showBanner("");
   summaryArea.hidden = true;
   summaryArea.innerHTML = "";
 
-  // Show loading inside the summary area.
   summaryArea.hidden = false;
   const loadingDiv = document.createElement("div");
   loadingDiv.className = "loading-state";
-  loadingDiv.textContent = "Summarising…";
+  loadingDiv.textContent = forceRefresh ? "Refreshing…" : "Summarising…";
   summaryArea.appendChild(loadingDiv);
   summariseBtn.disabled = true;
 
   try {
-    const data = await send("SUMMARY_ARTICLE", {});
-    lastAction = { type: data.videoId ? "youtube" : "summary" };
+    const data = await send("SUMMARY_ARTICLE", { forceRefresh: forceRefresh === true });
+    lastAction = { type: data.videoId ? "youtube" : "summary", data };
     showSummary(data);
   } catch (err) {
     const msg = err.message || "Something went wrong.";
@@ -498,7 +549,9 @@ summariseBtn.addEventListener("click", async () => {
   } finally {
     summariseBtn.disabled = false;
   }
-});
+}
+
+summariseBtn.addEventListener("click", () => runSummarise(false));
 
 // ── Explain selection ─────────────────────────────────────────────────────────
 
@@ -509,7 +562,7 @@ explainBtn.addEventListener("click", async () => {
 
   try {
     const data = await send("SELECTION_ACTION", { mode: "explain" });
-    lastAction = { type: "explain" };
+    lastAction = { type: "explain", data };
     showResult({ label: "Explanation", body: data.result, kind: "explain" });
   } catch (err) {
     const msg = err.message || "Something went wrong.";

@@ -493,3 +493,34 @@ body {
   color: var(--ink);
   line-height: 1.4;
 }
+
+/* ── Cache indicator + refresh button ───────────────────────────────────── */
+
+.cached-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.refresh-btn {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.refresh-btn:hover {
+  background: var(--ok-bg);
+  color: var(--teal-ink);
+}
