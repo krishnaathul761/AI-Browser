@@ -20,10 +20,10 @@
  *   NETWORK_ERROR — fetch threw
  */
 
-// Groq free-tier model: Llama 4 Scout — fast (460 tok/s on Groq hardware),
-// Mixture of Experts architecture, strong at summarisation and reasoning.
-// Free tier: 30 RPM, ~1,000 RPD. Text only — never pass video or image data.
-const GROQ_MODEL = "llama-4-scout-17b-16e-instruct";
+// Groq production model: Llama 3.3 70B Versatile.
+// Strong quality for summaries, chat, and translation.
+// Free tier: 30 RPM, 131K token context window, 280 tok/s.
+const GROQ_MODEL = "llama-3.3-70b-versatile";
 const GROQ_API_BASE = "https://api.groq.com/openai/v1/chat/completions";
 
 /**
