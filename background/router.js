@@ -200,11 +200,11 @@ async function handleSelectionAction(requestId, message) {
 
   // Build prompt based on mode.
   let prompt;
+  let maxTokens;
   if (mode === "explain") {
     prompt = buildExplainPrompt(selectionText.trim(), settings.language);
+    maxTokens = 300; // 3-5 sentences
   } else if (mode === "translate") {
-    // translateTarget is stored as a language code like "hi".
-    // Map common codes to names; fall back to the stored value as-is.
     const langNames = {
       hi: "Hindi", fr: "French", es: "Spanish", de: "German",
       ja: "Japanese", zh: "Chinese", ar: "Arabic", pt: "Portuguese",
@@ -214,12 +214,14 @@ async function handleSelectionAction(requestId, message) {
     const targetCode = settings.translateTarget || "hi";
     const targetName = langNames[targetCode] || targetCode;
     prompt = buildTranslateSelectionPrompt(selectionText.trim(), targetName, settings.language);
+    maxTokens = 400; // roughly same length as input
   } else if (mode === "draft") {
     prompt = buildDraftPrompt(selectionText.trim(), settings.language);
+    maxTokens = 200; // 2-4 sentences
   }
 
   try {
-    const result = await callAI({ model: GEMINI_FLASH_LITE, prompt, settings });
+    const result = await callAI({ model: GEMINI_FLASH_LITE, prompt, settings, maxTokens });
     return ok(requestId, { mode, result });
   } catch (err) {
     return fail(requestId, geminiErrorMessage(err));
@@ -317,12 +319,12 @@ async function handleSummaryArticle(requestId, message) {
     return fail(requestId, "MISSING_KEY");
   }
 
-  // 3. Build prompt → AI with Groq fallback.
+  // 3. Build prompt → AI with Groq fallback. 600 tokens covers the JSON structure.
   const prompt = buildSummaryPrompt(articleData, settings.language);
 
   let rawText;
   try {
-    rawText = await callAI({ model: GEMINI_FLASH_LITE, prompt, settings });
+    rawText = await callAI({ model: GEMINI_FLASH_LITE, prompt, settings, maxTokens: 600 });
   } catch (err) {
     return fail(requestId, geminiErrorMessage(err));
   }
@@ -484,7 +486,8 @@ async function handleSummaryYouTube(requestId, message) {
         GEMINI_FLASH,
         canonicalUrl,
         prompt,
-        settings.geminiApiKey
+        settings.geminiApiKey,
+        800  // YouTube summary needs more tokens for timestamps + chapters
       );
       lastErr = null;
       break; // success — exit retry loop
@@ -690,9 +693,8 @@ async function handleTranslateResult(requestId, message) {
 
   let rawText;
   try {
-    // Prefer Groq for translation — cheap, fast, and saves Flash quota.
-    // Falls back to Flash-Lite if no Groq key or Groq fails.
-    rawText = await callAI({ model: GEMINI_FLASH_LITE, prompt, settings });
+    // Translation of existing fields — 600 tokens covers the JSON structure.
+    rawText = await callAI({ model: GEMINI_FLASH_LITE, prompt, settings, maxTokens: 600 });
   } catch (err) {
     return fail(requestId, geminiErrorMessage(err));
   }
@@ -828,7 +830,7 @@ async function handleChatSend(requestId, message) {
 
   let reply;
   try {
-    reply = await callAI({ model: GEMINI_FLASH_LITE, prompt, settings });
+    reply = await callAI({ model: GEMINI_FLASH_LITE, prompt, settings, maxTokens: 500 });
   } catch (err) {
     return fail(requestId, geminiErrorMessage(err));
   }

@@ -39,12 +39,13 @@ function apiError(code, message, status) {
 /**
  * Call Gemini generateContent (non-streaming).
  *
- * @param {string} model   - e.g. GEMINI_FLASH_LITE from prompts.js
- * @param {string} prompt  - full assembled prompt string
- * @param {string} apiKey  - from chrome.storage.local (via router)
+ * @param {string} model      - e.g. GEMINI_FLASH_LITE from prompts.js
+ * @param {string} prompt     - full assembled prompt string
+ * @param {string} apiKey     - from chrome.storage.local (via router)
+ * @param {number} [maxTokens=1024] - output token cap for this call
  * @returns {Promise<string>} - the model's text reply
  */
-async function generateContent(model, prompt, apiKey) {
+async function generateContent(model, prompt, apiKey, maxTokens) {
   if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) {
     throw apiError("MISSING_KEY", "Gemini API key is not set.");
   }
@@ -56,15 +57,10 @@ async function generateContent(model, prompt, apiKey) {
     encodeURIComponent(apiKey.trim());
 
   const body = {
-    contents: [
-      {
-        parts: [{ text: prompt }],
-      },
-    ],
+    contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
-      // Keep responses focused; callers can override via prompt instructions.
       temperature: 0.4,
-      maxOutputTokens: 2048,
+      maxOutputTokens: (typeof maxTokens === "number" && maxTokens > 0) ? maxTokens : 1024,
     },
   };
 
@@ -125,18 +121,14 @@ async function generateContent(model, prompt, apiKey) {
 /**
  * Call Gemini generateContent with a YouTube video URL as a fileData part.
  *
- * The YouTube URL is sent as { fileData: { fileUri, mimeType: "video/mp4" } }
- * alongside a text instruction. This is the correct way to have Gemini
- * actually watch and analyse a YouTube video — passing the URL in plain
- * text alone does not give the model video access.
- *
  * @param {string} model      - e.g. GEMINI_FLASH from prompts.js
  * @param {string} videoUrl   - canonical youtube.com/watch?v=ID URL
  * @param {string} prompt     - text instruction (what to do with the video)
  * @param {string} apiKey     - from chrome.storage.local (via router)
+ * @param {number} [maxTokens=1024] - output token cap
  * @returns {Promise<string>} - the model's text reply
  */
-async function generateContentWithVideo(model, videoUrl, prompt, apiKey) {
+async function generateContentWithVideo(model, videoUrl, prompt, apiKey, maxTokens) {
   if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) {
     throw apiError("MISSING_KEY", "Gemini API key is not set.");
   }
@@ -151,21 +143,14 @@ async function generateContentWithVideo(model, videoUrl, prompt, apiKey) {
     contents: [
       {
         parts: [
-          // The video — Gemini fetches and processes it via the fileUri.
-          {
-            fileData: {
-              fileUri: videoUrl,
-              mimeType: "video/mp4",
-            },
-          },
-          // The instruction.
+          { fileData: { fileUri: videoUrl, mimeType: "video/mp4" } },
           { text: prompt },
         ],
       },
     ],
     generationConfig: {
       temperature: 0.4,
-      maxOutputTokens: 2048,
+      maxOutputTokens: (typeof maxTokens === "number" && maxTokens > 0) ? maxTokens : 1024,
     },
   };
 

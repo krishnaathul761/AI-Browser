@@ -178,7 +178,7 @@ function buildChatPrompt(pageContext, history, userMessage, language) {
     "Page URL: " + (pageContext.url || "") + "\n\n" +
     "Page content:\n" +
     '"""\n' +
-    (pageContext.text || "").trim().slice(0, 16000) +
+    (pageContext.text || "").trim().slice(0, 10000) +
     '\n"""\n\n' +
     (historyText ? "Conversation so far:\n" + historyText + "\n" : "") +
     "User: " + userMessage.trim() + "\n\n" +

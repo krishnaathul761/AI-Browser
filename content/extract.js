@@ -38,7 +38,7 @@ function isRestrictedPage() {
 
 // ── Article extraction (Readability) ─────────────────────────────────────────
 
-const ARTICLE_MAX_CHARS = 18000; // ~12–20 k chars per architecture
+const ARTICLE_MAX_CHARS = 12000; // ~3k tokens — enough for a solid summary, fits Groq's free tier comfortably
 
 /**
  * Attempt Readability on a clone of the document.

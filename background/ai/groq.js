@@ -43,11 +43,12 @@ function groqError(code, message, status) {
 /**
  * Call the Groq chat completions API with a single user message.
  *
- * @param {string} prompt  - full assembled prompt string
- * @param {string} apiKey  - Groq API key from chrome.storage.local
+ * @param {string} prompt     - full assembled prompt string
+ * @param {string} apiKey     - Groq API key from chrome.storage.local
+ * @param {number} [maxTokens=1024] - output token cap for this call
  * @returns {Promise<string>} - the model's text reply
  */
-async function generateContentGroq(prompt, apiKey) {
+async function generateContentGroq(prompt, apiKey, maxTokens) {
   if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) {
     throw groqError("MISSING_KEY", "Groq API key is not set.");
   }
@@ -56,7 +57,7 @@ async function generateContentGroq(prompt, apiKey) {
     model: GROQ_MODEL,
     messages: [{ role: "user", content: prompt }],
     temperature: 0.4,
-    max_tokens: 2048,
+    max_tokens: (typeof maxTokens === "number" && maxTokens > 0) ? maxTokens : 1024,
   };
 
   let response;

@@ -1,36 +1,33 @@
 /**
  * background/ai/ai.js
  *
- * Unified AI dispatcher supporting three provider modes:
+ * Unified AI dispatcher with three provider modes:
  *
- *   "gemini" — use Gemini only, no fallback
- *   "groq"   — use Groq only, no fallback (text tasks only)
- *   "auto"   — try the preferred provider first; fall back to the other on
- *              retryable failures (429, 5xx, network). Default when unset.
+ *   "auto"   — Groq first for text; Gemini as fallback on retryable errors.
+ *              YouTube / vision always go to Gemini regardless of this setting.
+ *   "groq"   — Groq only (text tasks). No Gemini fallback.
+ *   "gemini" — Gemini only. No Groq fallback.
  *
- * The mode comes from settings.preferredProvider, which the user controls
- * in the Options page. It defaults to "auto".
- *
- * Tasks that MUST use Gemini (YouTube URL, vision) always call
- * callAIGeminiOnly() directly and bypass this setting.
+ * The mode comes from settings.preferredProvider (default: "auto").
  *
  * Exported symbols (available globally after importScripts):
- *   callAI(opts)            → Promise<string>
- *   callAIGeminiOnly(opts)  → Promise<string>
+ *   callAI(opts)            → Promise<string>   text tasks, Groq-first
+ *   callAIGeminiOnly(opts)  → Promise<string>   YouTube / vision, Gemini only
  *
  * opts shape:
  *   {
- *     model:    string,   // GEMINI_FLASH_LITE | GEMINI_FLASH
- *     prompt:   string,
- *     settings: { geminiApiKey, groqApiKey, preferredProvider },
+ *     model:       string,   // GEMINI_FLASH_LITE (used only when Gemini runs)
+ *     prompt:      string,
+ *     settings:    { geminiApiKey, groqApiKey, preferredProvider },
+ *     maxTokens?:  number,   // task-specific cap; overrides default in clients
  *   }
  */
 
 // ── Error helpers ─────────────────────────────────────────────────────────────
 
 /**
- * True when a Gemini error is worth retrying on the other provider.
- * Auth errors (400/403) are never retried — a bad key is a bad key.
+ * True when an error is worth retrying on the other provider.
+ * Auth errors (400/401/403) are never retried — a bad key is a bad key.
  * @param {Error} err
  * @returns {boolean}
  */
@@ -43,6 +40,15 @@ function isRetryable(err) {
   return false;
 }
 
+function groqErrToString(err) {
+  if (!err) return "";
+  if (err.code === "MISSING_KEY") return "MISSING_KEY";
+  if (err.code === "API_ERROR" && err.status === 429) return "Groq rate limit reached.";
+  if (err.code === "API_ERROR" && err.status === 401) return "Invalid Groq API key. Check your key in Settings.";
+  if (err.code === "NETWORK_ERROR") return "Network error reaching Groq.";
+  return err.message || "Groq request failed.";
+}
+
 function geminiErrToString(err) {
   if (!err) return "";
   if (err.code === "MISSING_KEY") return "MISSING_KEY";
@@ -51,15 +57,6 @@ function geminiErrToString(err) {
   if (err.code === "API_ERROR" && err.status === 403) return "Gemini API key does not have access. Check your key in Settings.";
   if (err.code === "NETWORK_ERROR") return "Network error reaching Gemini.";
   return err.message || "Gemini request failed.";
-}
-
-function groqErrToString(err) {
-  if (!err) return "";
-  if (err.code === "MISSING_KEY") return "Groq key not set.";
-  if (err.code === "API_ERROR" && err.status === 429) return "Groq rate limit reached. Try again in a moment.";
-  if (err.code === "API_ERROR" && err.status === 401) return "Invalid Groq API key. Check your key in Settings.";
-  if (err.code === "NETWORK_ERROR") return "Network error reaching Groq.";
-  return err.message || "Groq request failed.";
 }
 
 function makeError(code, message, status) {
@@ -71,90 +68,88 @@ function makeError(code, message, status) {
 
 // ── Provider calls ────────────────────────────────────────────────────────────
 
-async function tryGemini(model, prompt, geminiKey) {
-  return generateContent(model, prompt, geminiKey);
+async function tryGemini(model, prompt, geminiKey, maxTokens) {
+  return generateContent(model, prompt, geminiKey, maxTokens);
 }
 
-async function tryGroq(prompt, groqKey) {
-  return generateContentGroq(prompt, groqKey);
+async function tryGroq(prompt, groqKey, maxTokens) {
+  return generateContentGroq(prompt, groqKey, maxTokens);
 }
 
-// ── Main dispatcher ───────────────────────────────────────────────────────────
+// ── Main dispatcher (text tasks — Groq-first) ─────────────────────────────────
 
 /**
- * Call the AI provider chosen by settings.preferredProvider.
+ * Call the AI provider for text tasks.
  *
- * "gemini" → Gemini only, throws on failure.
- * "groq"   → Groq only, throws on failure.
- * "auto"   → Try Gemini first (if key available); on retryable error fall
- *            back to Groq. If only one key is present, use that provider
- *            directly. Falls back in the other direction too:
- *            Groq-first if preferredProvider is "auto" and only groqKey set.
+ * Default mode ("auto"): try Groq first; fall back to Gemini on retryable
+ * errors. If only one key is set, use that provider directly.
  *
- * @param {{ model: string, prompt: string, settings: object }} opts
+ * "groq"   → Groq only.
+ * "gemini" → Gemini only.
+ *
+ * @param {{ model: string, prompt: string, settings: object, maxTokens?: number }} opts
  * @returns {Promise<string>}
  */
 async function callAI(opts) {
-  const { model, prompt, settings } = opts;
+  const { model, prompt, settings, maxTokens } = opts;
   const geminiKey = settings && settings.geminiApiKey;
   const groqKey   = settings && settings.groqApiKey;
   const provider  = (settings && settings.preferredProvider) || "auto";
 
-  // No keys at all.
   if (!geminiKey && !groqKey) {
     throw makeError("MISSING_KEY", "MISSING_KEY");
   }
 
-  // ── "gemini" mode: Gemini only ──────────────────────────────────────────────
+  // ── Explicit "gemini" mode ────────────────────────────────────────────────
   if (provider === "gemini") {
     if (!geminiKey) throw makeError("MISSING_KEY", "MISSING_KEY");
-    return tryGemini(model, prompt, geminiKey);
+    return tryGemini(model, prompt, geminiKey, maxTokens);
   }
 
-  // ── "groq" mode: Groq only ──────────────────────────────────────────────────
+  // ── Explicit "groq" mode ──────────────────────────────────────────────────
   if (provider === "groq") {
     if (!groqKey) throw makeError("MISSING_KEY", "MISSING_KEY");
-    return tryGroq(prompt, groqKey);
+    return tryGroq(prompt, groqKey, maxTokens);
   }
 
-  // ── "auto" mode: smart fallback ─────────────────────────────────────────────
-  // Only one key available → use that provider directly.
-  if (geminiKey && !groqKey) return tryGemini(model, prompt, geminiKey);
-  if (groqKey && !geminiKey) return tryGroq(prompt, groqKey);
+  // ── "auto" mode: Groq-first ───────────────────────────────────────────────
 
-  // Both keys available → try Gemini first, fall back to Groq.
+  // Only one key → use that provider directly.
+  if (groqKey && !geminiKey) return tryGroq(prompt, groqKey, maxTokens);
+  if (geminiKey && !groqKey) return tryGemini(model, prompt, geminiKey, maxTokens);
+
+  // Both keys → try Groq first, fall back to Gemini.
   let firstErr = null;
   try {
-    return await tryGemini(model, prompt, geminiKey);
+    return await tryGroq(prompt, groqKey, maxTokens);
   } catch (err) {
     firstErr = err;
     if (!isRetryable(err)) {
-      // Auth errors etc. — not worth trying Groq.
+      // Auth error on Groq — not worth trying Gemini for the same prompt.
       throw err;
     }
   }
 
-  // Gemini failed with a retryable error → try Groq.
+  // Groq failed with a retryable error → try Gemini.
   try {
-    return await tryGroq(prompt, groqKey);
-  } catch (groqErr) {
-    // Both failed — combine messages.
-    const msg = geminiErrToString(firstErr) + " Groq fallback also failed: " + groqErrToString(groqErr);
-    const combined = makeError(firstErr.code, msg, firstErr.status);
-    throw combined;
+    return await tryGemini(model, prompt, geminiKey, maxTokens);
+  } catch (geminiErr) {
+    const msg = groqErrToString(firstErr) + " Gemini fallback also failed: " + geminiErrToString(geminiErr);
+    throw makeError(firstErr.code, msg, firstErr.status);
   }
 }
 
 /**
- * Call Gemini only — no Groq fallback, ignores preferredProvider.
- * Used for tasks that Groq cannot handle: YouTube URL, vision.
+ * Gemini-only call — no Groq fallback, ignores preferredProvider.
+ * Required for YouTube URL summarisation and vision tasks (Groq cannot
+ * process video or image data).
  *
- * @param {{ model: string, prompt: string, settings: object }} opts
+ * @param {{ model: string, prompt: string, settings: object, maxTokens?: number }} opts
  * @returns {Promise<string>}
  */
 async function callAIGeminiOnly(opts) {
-  const { model, prompt, settings } = opts;
+  const { model, prompt, settings, maxTokens } = opts;
   const geminiKey = settings && settings.geminiApiKey;
   if (!geminiKey) throw makeError("MISSING_KEY", "MISSING_KEY");
-  return generateContent(model, prompt, geminiKey);
+  return generateContent(model, prompt, geminiKey, maxTokens);
 }

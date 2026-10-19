@@ -39,11 +39,11 @@ function updateProviderStatus(settings) {
     kind = "warn";
   } else if (provider === "auto") {
     if (hasGemini && hasGroq) {
-      text = "✓ Gemini is active · Groq ready as automatic fallback";
-    } else if (hasGemini) {
-      text = "✓ Gemini is active · Add Groq key for automatic fallback";
+      text = "✓ Groq is primary · Gemini ready as fallback (YouTube & vision always use Gemini)";
+    } else if (hasGroq) {
+      text = "✓ Groq is active · Add Gemini key for YouTube & vision support";
     } else {
-      text = "✓ Groq is active (only key saved) · Add Gemini key for YouTube & vision";
+      text = "✓ Gemini is active (only key saved) · Add Groq key for faster text tasks";
     }
   } else if (provider === "gemini") {
     text = hasGemini
