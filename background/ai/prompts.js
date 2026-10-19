@@ -67,7 +67,8 @@ function buildSummaryPrompt(article, language) {
 
   return (
     "You are a helpful reading assistant. Read the article text below and return a JSON object.\n" +
-    "Return ONLY valid JSON — no markdown fences, no extra keys, no explanation.\n\n" +
+    "Return ONLY valid JSON — no markdown fences, no extra keys, no explanation, no preamble.\n" +
+    "Your entire response must be a single JSON object starting with { and ending with }.\n\n" +
     "Required JSON shape:\n" +
     '{ "tldr": "<one sentence>", "keyPoints": ["<point 1>", ..., "<point 5>"], "nextSteps": "<1-2 sentences on what to do next>" }\n\n' +
     "Rules:\n" +

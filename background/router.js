@@ -358,7 +358,8 @@ async function handleSummaryArticle(requestId, message) {
 
 /**
  * Strip markdown fences and parse the summary JSON the model returned.
- * Returns null if parsing or validation fails.
+ * Tries multiple extraction strategies to handle models that wrap JSON
+ * in explanation text (e.g. "Here is the summary: { ... }").
  *
  * @param {string} raw
  * @returns {{ tldr, keyPoints, nextSteps } | null}
@@ -366,11 +367,22 @@ async function handleSummaryArticle(requestId, message) {
 function parseSummaryJson(raw) {
   if (typeof raw !== "string") return null;
 
-  // Strip ```json ... ``` or ``` ... ``` fences if present.
   let text = raw.trim();
+
+  // Strategy 1: strip ```json ... ``` or ``` ... ``` fences.
   const fenceMatch = text.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/i);
   if (fenceMatch) {
     text = fenceMatch[1].trim();
+  }
+
+  // Strategy 2: find the first { ... } block in the response (handles
+  // models that add preamble like "Here is the JSON summary:").
+  if (!text.startsWith("{")) {
+    const braceStart = text.indexOf("{");
+    const braceEnd   = text.lastIndexOf("}");
+    if (braceStart !== -1 && braceEnd > braceStart) {
+      text = text.slice(braceStart, braceEnd + 1);
+    }
   }
 
   let obj;
@@ -559,6 +571,15 @@ function parseYouTubeJson(raw) {
   const fenceMatch = text.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/i);
   if (fenceMatch) text = fenceMatch[1].trim();
 
+  // Extract JSON object if model added preamble text.
+  if (!text.startsWith("{")) {
+    const braceStart = text.indexOf("{");
+    const braceEnd   = text.lastIndexOf("}");
+    if (braceStart !== -1 && braceEnd > braceStart) {
+      text = text.slice(braceStart, braceEnd + 1);
+    }
+  }
+
   let obj;
   try {
     obj = JSON.parse(text);
@@ -711,6 +732,12 @@ async function handleTranslateResult(requestId, message) {
     let text = rawText.trim();
     const fence = text.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/i);
     if (fence) text = fence[1].trim();
+    // Extract JSON object if model added preamble text.
+    if (!text.startsWith("{")) {
+      const bs = text.indexOf("{");
+      const be = text.lastIndexOf("}");
+      if (bs !== -1 && be > bs) text = text.slice(bs, be + 1);
+    }
     translated = JSON.parse(text);
   } catch (_e) {
     // If translation JSON is malformed, return original untranslated fields.
