@@ -445,8 +445,9 @@ function buildKeyPointsSection(keyPoints) {
 }
 
 /**
+/**
  * Renders clickable timestamp links.
- * Each link opens the video at the right time: youtube.com/watch?v=ID&t=SECONDS
+ * Clicking seeks the already-open YouTube tab instead of opening a new one.
  */
 function buildTimestampsSection(timestamps, videoId) {
   const section = document.createElement("div");
@@ -465,10 +466,14 @@ function buildTimestampsSection(timestamps, videoId) {
 
     const link = document.createElement("a");
     link.className = "timestamp-link";
-    link.href = "https://www.youtube.com/watch?v=" + videoId + "&t=" + seconds;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
+    link.href = "#";  // prevent default navigation
     link.textContent = formatSeconds(seconds);
+    link.setAttribute("data-seconds", seconds);
+    link.setAttribute("data-videoid", videoId);
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      seekYouTubeTab(videoId, seconds);
+    });
 
     const text = document.createElement("span");
     text.className = "timestamp-label";
@@ -481,6 +486,43 @@ function buildTimestampsSection(timestamps, videoId) {
 
   section.appendChild(list);
   return section;
+}
+
+/**
+ * Seek an already-open YouTube tab to a specific timestamp.
+ * If no matching tab is found, open a new one.
+ *
+ * @param {string} videoId
+ * @param {number} seconds
+ */
+async function seekYouTubeTab(videoId, seconds) {
+  const targetUrl = "https://www.youtube.com/watch?v=" + videoId + "&t=" + seconds;
+
+  try {
+    // Find an existing tab playing this video.
+    const allTabs = await chrome.tabs.query({});
+    const ytTab = allTabs.find((t) => {
+      if (!t.url) return false;
+      try {
+        const u = new URL(t.url);
+        const host = u.hostname.replace(/^www\./, "");
+        if (host !== "youtube.com" && host !== "m.youtube.com") return false;
+        return u.searchParams.get("v") === videoId;
+      } catch (_e) { return false; }
+    });
+
+    if (ytTab) {
+      // Update the existing tab's URL to the timestamp version and focus it.
+      await chrome.tabs.update(ytTab.id, { url: targetUrl, active: true });
+      await chrome.windows.update(ytTab.windowId, { focused: true });
+    } else {
+      // No existing tab — open a new one.
+      await chrome.tabs.create({ url: targetUrl });
+    }
+  } catch (_e) {
+    // Fallback: open a new tab.
+    chrome.tabs.create({ url: targetUrl });
+  }
 }
 
 function buildNextStepsSection(nextSteps) {

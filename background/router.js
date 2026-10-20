@@ -604,12 +604,30 @@ function parseYouTubeJson(raw) {
   if (!Array.isArray(obj.keyPoints) || obj.keyPoints.length === 0) return null;
   if (typeof obj.nextSteps !== "string" || !obj.nextSteps.trim()) return null;
 
-  // Timestamps are optional — normalise to a clean array.
-  const timestamps = Array.isArray(obj.timestamps)
+  // Timestamps are optional — normalise and filter outliers.
+  let timestamps = Array.isArray(obj.timestamps)
     ? obj.timestamps
-        .filter((t) => t && typeof t.label === "string" && Number.isInteger(t.seconds))
-        .map((t) => ({ label: t.label.trim(), seconds: Math.max(0, t.seconds) }))
+        .filter((t) => t && typeof t.label === "string" && Number.isInteger(t.seconds) && t.seconds >= 0)
+        .map((t) => ({ label: t.label.trim(), seconds: t.seconds }))
     : [];
+
+  // Remove hallucinated timestamps beyond the video's likely duration.
+  // Strategy: sort by seconds, then drop any entry whose value exceeds
+  // 1.15× the previous entry's value by a large margin, or more practically,
+  // drop anything beyond 1.1× the second-to-last timestamp.
+  // This catches "3:28 on a 2:28 video" style hallucinations.
+  if (timestamps.length >= 2) {
+    // Sort ascending by time.
+    const sorted = [...timestamps].sort((a, b) => a.seconds - b.seconds);
+    // Estimated video duration = last chapter start + 15% buffer, but
+    // use the second-to-last as the cap reference to avoid self-referential loop.
+    const secondToLast = sorted[sorted.length - 2].seconds;
+    // Allow up to 20% beyond the second-to-last chapter start, hard cap 12h.
+    const cap = Math.min(Math.ceil(secondToLast * 1.2) + 30, 43200);
+    timestamps = timestamps.filter((t) => t.seconds <= cap);
+  } else {
+    timestamps = timestamps.filter((t) => t.seconds <= 43200);
+  }
 
   return {
     tldr: obj.tldr.trim(),
