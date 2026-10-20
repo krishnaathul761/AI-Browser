@@ -13,9 +13,13 @@ const resultArea = document.getElementById("result-area");
 // via Groq instead of re-calling the full API.
 //
 // Shape:
-//   { type: "summary"|"youtube", data: SummaryData }
+//   { type: "summary"|"youtube", data: SummaryData, originalData: SummaryData }
 //   { type: "explain", data: { result: string } }
 //   null
+//
+// originalData is always the English source — we always translate FROM that,
+// never from a previously-translated version, so EN→Hinglish→EN round-trips
+// correctly.
 //
 let lastAction = null;
 
@@ -84,8 +88,9 @@ async function setLanguage(language) {
   // block the rerun. Errors are swallowed here; the toggle UI already updated.
   send("SETTINGS_SET", { language: language }).catch(() => {});
   // Re-run the last action in the new language immediately.
+  // Pass the language directly so we don't race with the storage write above.
   if (lastAction) {
-    await rerunLastAction();
+    await rerunLastAction(language);
   }
 }
 
@@ -104,13 +109,20 @@ langButtons.forEach((btn) => {
  * Translates the stored last result into the new language via TRANSLATE_RESULT.
  * Uses Groq for text — never re-calls Gemini Flash.
  * Falls back to a full re-run if translation fails.
+ *
+ * @param {string} [explicitLanguage] - pass directly from the toggle to avoid
+ *   a storage-read race with the just-fired SETTINGS_SET.
  */
-async function rerunLastAction() {
+async function rerunLastAction(explicitLanguage) {
   if (!lastAction) return;
 
-  const { type, data } = lastAction;
+  const { type, data, originalData } = lastAction;
 
   try {
+    // Use the explicitly passed language when available (avoids a race with
+    // the fire-and-forget SETTINGS_SET in setLanguage).
+    const language = explicitLanguage || (await send("SETTINGS_GET")).language || "en";
+
     if (type === "summary" || type === "youtube") {
       summaryArea.hidden = false;
       summaryArea.innerHTML = "";
@@ -120,42 +132,59 @@ async function rerunLastAction() {
       summaryArea.appendChild(loadingDiv);
       summariseBtn.disabled = true;
 
-      // Get current language from settings.
-      const settings = await send("SETTINGS_GET");
-      const language = settings.language || "en";
+      // Switching back to English — restore original data, no API call needed.
+      if (language === "en") {
+        const source = originalData || data;
+        // Never overwrite originalData — keep it as the immutable English source.
+        lastAction = { type, data: source, originalData: originalData || source };
+        showSummary(source);
+        return;
+      }
 
-      // Send just the text fields to translate — no video/article re-fetch.
+      // Always translate FROM the original English source.
+      const source = originalData || data;
       const fields = {
-        tldr:       data.tldr,
-        keyPoints:  data.keyPoints,
-        nextSteps:  data.nextSteps,
-        timestamps: data.timestamps,
+        tldr:       source.tldr,
+        keyPoints:  source.keyPoints,
+        nextSteps:  source.nextSteps,
+        timestamps: source.timestamps,
       };
 
       const translated = await send("TRANSLATE_RESULT", { fields, language });
 
-      // Merge translated fields back into the original data shape.
-      const newData = Object.assign({}, data, {
+      const newData = Object.assign({}, source, {
         tldr:       translated.tldr,
         keyPoints:  translated.keyPoints,
         nextSteps:  translated.nextSteps,
-        timestamps: translated.timestamps || data.timestamps,
+        timestamps: translated.timestamps || source.timestamps,
         fromCache:  true,
       });
 
-      // Update lastAction so next toggle also translates from latest.
-      lastAction = { type, data: newData };
+      // Preserve originalData — always the untranslated English source.
+      lastAction = { type, data: newData, originalData: source };
       showSummary(newData);
 
     } else if (type === "explain") {
       showLoading("Translating…");
       explainBtn.disabled = true;
 
-      // For explanations, just re-run SELECTION_ACTION — it's Flash-Lite
-      // which is cheap and has 1,000 RPD. No separate translate needed.
-      const newData = await send("SELECTION_ACTION", { mode: "explain" });
-      lastAction = { type: "explain", data: newData };
-      showResult({ label: "Explanation", body: newData.result, kind: "explain" });
+      // Switching back to English — restore original text, no API call.
+      if (language === "en") {
+        const source = originalData || data;
+        lastAction = { type: "explain", data: source, originalData: originalData || source };
+        showResult({ label: "Explanation", body: source.result, kind: "explain" });
+        return;
+      }
+
+      const source = originalData || data;
+      const fields = { tldr: source.result, keyPoints: [], nextSteps: "" };
+      const translated = await send("TRANSLATE_RESULT", { fields, language });
+      const translatedText = translated.tldr || source.result;
+
+      const newData = { result: translatedText };
+      // Preserve originalData — never overwrite with translated version.
+      lastAction = { type: "explain", data: newData, originalData: source };
+      showResult({ label: "Explanation", body: translatedText, kind: "explain" });
     }
 
   } catch (err) {
@@ -523,8 +552,17 @@ async function runSummarise(forceRefresh) {
 
   try {
     const data = await send("SUMMARY_ARTICLE", { forceRefresh: forceRefresh === true });
-    lastAction = { type: data.videoId ? "youtube" : "summary", data };
-    showSummary(data);
+    // Summary always comes back in English. Store it as originalData.
+    // If the user has Hinglish selected, translate immediately.
+    const settings = await send("SETTINGS_GET");
+    const currentLang = settings.language || "en";
+    lastAction = { type: data.videoId ? "youtube" : "summary", data, originalData: data };
+    if (currentLang !== "en") {
+      // Translate in place — rerunLastAction uses originalData as source.
+      await rerunLastAction(currentLang);
+    } else {
+      showSummary(data);
+    }
   } catch (err) {
     const msg = err.message || "Something went wrong.";
     summaryArea.hidden = true;
@@ -669,7 +707,16 @@ async function sendChatMessage() {
   const thinkingBubble = appendThinking();
 
   try {
-    const data = await send("CHAT_SEND", { message: text });
+    // Resolve the active tab id in the panel's context and pass it explicitly
+    // so the SW doesn't have to guess — side panel may be in a different window
+    // than what chrome.tabs.query({ currentWindow: true }) returns.
+    let tabId;
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      tabId = tab && tab.id;
+    } catch (_e) {}
+
+    const data = await send("CHAT_SEND", { message: text, tabId });
 
     thinkingBubble.remove();
 
@@ -727,6 +774,395 @@ chatResetBtn.addEventListener("click", async () => {
   } catch (_e) {}
 });
 
+// ── Screenshot & Ask ──────────────────────────────────────────────────────────
+
+const captureBtn         = document.getElementById("capture-btn");
+const screenshotArea     = document.getElementById("screenshot-area");
+const screenshotCanvas   = document.getElementById("screenshot-canvas");
+const cropCanvas         = document.getElementById("crop-canvas");
+const screenshotHint     = document.getElementById("screenshot-hint");
+const clearCropBtn       = document.getElementById("clear-crop-btn");
+const clearCaptureBtn    = document.getElementById("clear-capture-btn");
+const screenshotQuestion = document.getElementById("screenshot-question");
+const screenshotAskBtn   = document.getElementById("screenshot-ask-btn");
+const screenshotResult   = document.getElementById("screenshot-result");
+const cropPreviewWrap    = document.getElementById("crop-preview-wrap");
+const cropPreviewCanvas  = document.getElementById("crop-preview-canvas");
+
+// State
+let screenshotDataUrl = null;   // full capture
+let croppedDataUrl    = null;   // user-drawn crop (null = use full)
+let cropState         = null;   // { startX, startY, endX, endY } in canvas coords
+let isDragging        = false;
+
+// ── Capture ───────────────────────────────────────────────────────────────────
+
+let isCapturing = false; // debounce guard
+
+captureBtn.addEventListener("click", async () => {
+  if (isCapturing) return;
+  isCapturing = true;
+  showBanner("");
+  captureBtn.disabled = true;
+  captureBtn.textContent = "Capturing…";
+
+  try {
+    const data = await send("SCREENSHOT_CAPTURE", {});
+    screenshotDataUrl = data.dataUrl;
+    croppedDataUrl    = null;
+    cropState         = null;
+    screenshotCanvas._cleanSnapshot = null;
+
+    // Draw full image onto canvas.
+    await drawImageOnCanvas(screenshotCanvas, screenshotDataUrl);
+
+    // Show the screenshot area.
+    screenshotArea.hidden = false;
+    clearCropBtn.hidden   = true;
+    screenshotHint.textContent = "Drag to crop a region, or ask about the full screenshot.";
+    screenshotResult.hidden    = true;
+    screenshotResult.innerHTML = "";
+    screenshotQuestion.value   = "";
+    screenshotQuestion.focus();
+
+  } catch (err) {
+    const msg = err.message || "Could not capture screen.";
+    if (msg === "RESTRICTED_PAGE") {
+      showBanner("Sahayak can't capture this page (browser or extension page).");
+    } else {
+      showBanner(msg);
+    }
+  } finally {
+    captureBtn.disabled = false;
+    captureBtn.textContent = "Capture screen";
+    // Allow next capture after 1.5s to stay within quota.
+    setTimeout(() => { isCapturing = false; }, 1500);
+  }
+});
+
+// ── Draw image on canvas ──────────────────────────────────────────────────────
+
+function drawImageOnCanvas(canvas, dataUrl) {
+  return new Promise((resolve, reject) => {
+    // Convert data URL → Blob → ImageBitmap without using fetch(),
+    // which is blocked for data URLs inside extension pages.
+    try {
+      const [header, base64] = dataUrl.split(",");
+      const mimeMatch = header.match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : "image/png";
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: mime });
+
+      createImageBitmap(blob).then((bitmap) => {
+        const maxW  = 320;
+        const scale = bitmap.width > maxW ? maxW / bitmap.width : 1;
+        canvas.width  = Math.round(bitmap.width  * scale);
+        canvas.height = Math.round(bitmap.height * scale);
+        canvas.dataset.scale = String(scale);
+        canvas.dataset.origW = String(bitmap.width);
+        canvas.dataset.origH = String(bitmap.height);
+        canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        bitmap.close();
+        resolve();
+      }).catch(reject);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+// ── Crop interaction ──────────────────────────────────────────────────────────
+
+screenshotCanvas.addEventListener("mousedown", (e) => {
+  if (!screenshotDataUrl) return;
+  const rect = screenshotCanvas.getBoundingClientRect();
+  cropState = {
+    startX: e.clientX - rect.left,
+    startY: e.clientY - rect.top,
+    endX:   e.clientX - rect.left,
+    endY:   e.clientY - rect.top,
+  };
+  isDragging = true;
+});
+
+screenshotCanvas.addEventListener("mousemove", (e) => {
+  if (!isDragging || !cropState) return;
+  const rect = screenshotCanvas.getBoundingClientRect();
+  cropState.endX = e.clientX - rect.left;
+  cropState.endY = e.clientY - rect.top;
+  drawCropOverlay();
+});
+
+screenshotCanvas.addEventListener("mouseup", async () => {
+  if (!isDragging || !cropState) return;
+  isDragging = false;
+
+  const w = Math.abs(cropState.endX - cropState.startX);
+  const h = Math.abs(cropState.endY - cropState.startY);
+
+  if (w < 5 || h < 5) {
+    cropState = null;
+    clearCropBtn.hidden = true;
+    croppedDataUrl = null;
+    cropPreviewWrap.hidden = true;
+    return;
+  }
+
+  croppedDataUrl = await extractCrop();
+  clearCropBtn.hidden = false;
+  screenshotHint.textContent = "Crop selected. Ask about the highlighted region.";
+  showCropPreview(croppedDataUrl);
+});
+
+screenshotCanvas.addEventListener("mouseleave", async () => {
+  if (isDragging) {
+    isDragging = false;
+    if (cropState) {
+      const w = Math.abs(cropState.endX - cropState.startX);
+      const h = Math.abs(cropState.endY - cropState.startY);
+      if (w >= 5 && h >= 5) {
+        croppedDataUrl = await extractCrop();
+        clearCropBtn.hidden = false;
+        showCropPreview(croppedDataUrl);
+      }
+    }
+  }
+});
+
+function drawCropOverlay() {
+  if (!cropState) return;
+  const ctx = screenshotCanvas.getContext("2d");
+
+  // Save the clean image pixels so we can restore them under the selection.
+  // We keep a clean offscreen copy the first time we draw a crop.
+  if (!screenshotCanvas._cleanSnapshot) {
+    const snap = document.createElement("canvas");
+    snap.width  = screenshotCanvas.width;
+    snap.height = screenshotCanvas.height;
+    snap.getContext("2d").drawImage(screenshotCanvas, 0, 0);
+    screenshotCanvas._cleanSnapshot = snap;
+  }
+
+  const snap = screenshotCanvas._cleanSnapshot;
+
+  // Restore the clean image.
+  ctx.drawImage(snap, 0, 0);
+
+  // Dim the whole canvas.
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.fillRect(0, 0, screenshotCanvas.width, screenshotCanvas.height);
+
+  // Cut out the selected region from the clean snapshot.
+  const x = Math.min(cropState.startX, cropState.endX);
+  const y = Math.min(cropState.startY, cropState.endY);
+  const w = Math.abs(cropState.endX - cropState.startX);
+  const h = Math.abs(cropState.endY - cropState.startY);
+
+  if (w > 0 && h > 0) {
+    ctx.drawImage(snap, x, y, w, h, x, y, w, h);
+    ctx.strokeStyle = "#0d6b63";
+    ctx.lineWidth   = 2;
+    ctx.strokeRect(x, y, w, h);
+  }
+}
+
+function extractCrop() {
+  if (!cropState || !screenshotDataUrl) return null;
+
+  // Work from the original full-resolution image, not the scaled canvas.
+  // This gives the crop full pixel data so the enlarged preview is sharp.
+  const scale = Number(screenshotCanvas.dataset.scale) || 1;
+
+  // canvas coords → original image coords
+  const srcX = Math.round(Math.min(cropState.startX, cropState.endX)   / scale);
+  const srcY = Math.round(Math.min(cropState.startY, cropState.endY)   / scale);
+  const srcW = Math.round(Math.abs(cropState.endX - cropState.startX)  / scale);
+  const srcH = Math.round(Math.abs(cropState.endY - cropState.startY)  / scale);
+
+  if (srcW < 1 || srcH < 1) return null;
+
+  // Decode the original full-res data URL into a bitmap synchronously
+  // using an offscreen canvas at full resolution.
+  const [header, base64] = screenshotDataUrl.split(",");
+  const mimeMatch = header.match(/:(.*?);/);
+  const mime   = mimeMatch ? mimeMatch[1] : "image/png";
+  const binary = atob(base64);
+  const bytes  = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: mime });
+
+  // Return a promise — callers that need the dataUrl must await.
+  return createImageBitmap(blob).then((bitmap) => {
+    const off = document.createElement("canvas");
+    off.width  = srcW;
+    off.height = srcH;
+    off.getContext("2d").drawImage(bitmap, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
+    bitmap.close();
+    return off.toDataURL("image/png");
+  });
+}
+
+/**
+ * Render the cropped data URL enlarged into the crop preview canvas.
+ * The preview fills the full panel width (max 320px) so small crops
+ * are shown at a much larger size for easy inspection.
+ *
+ * @param {string} dataUrl - cropped PNG data URL
+ */
+function showCropPreview(dataUrl) {
+  if (!dataUrl) {
+    cropPreviewWrap.hidden = true;
+    return;
+  }
+
+  const [header, base64] = dataUrl.split(",");
+  const mimeMatch = header.match(/:(.*?);/);
+  const mime = mimeMatch ? mimeMatch[1] : "image/png";
+  const binary = atob(base64);
+  const bytes  = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: mime });
+
+  createImageBitmap(blob).then((bitmap) => {
+    // Scale up to fill panel width. Since the crop is full-res we can go
+    // higher — cap at 4× to avoid unnecessarily huge previews.
+    const maxW    = 320;
+    const maxScale = 4;
+    const scale  = Math.min(maxW / bitmap.width, maxScale);
+    cropPreviewCanvas.width  = Math.round(bitmap.width  * scale);
+    cropPreviewCanvas.height = Math.round(bitmap.height * scale);
+    cropPreviewCanvas.getContext("2d").drawImage(
+      bitmap, 0, 0, cropPreviewCanvas.width, cropPreviewCanvas.height
+    );
+    bitmap.close();
+    cropPreviewWrap.hidden = false;
+  }).catch(() => {
+    cropPreviewWrap.hidden = true;
+  });
+}
+
+clearCropBtn.addEventListener("click", () => {
+  cropState      = null;
+  croppedDataUrl = null;
+  clearCropBtn.hidden      = true;
+  cropPreviewWrap.hidden   = true;
+  cropPreviewCanvas.width  = 0;
+  cropPreviewCanvas.height = 0;
+  screenshotHint.textContent = "Drag to crop a region, or ask about the full screenshot.";
+  // Redraw the clean image.
+  drawImageOnCanvas(screenshotCanvas, screenshotDataUrl);
+});
+
+clearCaptureBtn.addEventListener("click", () => {
+  // Reset all screenshot state and hide the area.
+  screenshotDataUrl = null;
+  croppedDataUrl    = null;
+  cropState         = null;
+  isDragging        = false;
+  screenshotCanvas._cleanSnapshot = null;
+  screenshotCanvas.width  = 0;
+  screenshotCanvas.height = 0;
+  cropPreviewWrap.hidden   = true;
+  cropPreviewCanvas.width  = 0;
+  cropPreviewCanvas.height = 0;
+  clearCropBtn.hidden      = true;
+  screenshotResult.hidden  = true;
+  screenshotResult.innerHTML = "";
+  screenshotQuestion.value   = "";
+  screenshotArea.hidden      = true;
+  showBanner("");
+});
+
+// ── Ask ───────────────────────────────────────────────────────────────────────
+
+async function runScreenshotAsk() {
+  const question = screenshotQuestion.value.trim();
+  if (!question) {
+    screenshotQuestion.focus();
+    return;
+  }
+  if (!screenshotDataUrl) {
+    showBanner("Capture the screen first.");
+    return;
+  }
+
+  screenshotAskBtn.disabled = true;
+  screenshotResult.hidden   = false;
+  screenshotResult.innerHTML = "";
+
+  const loadingDiv = document.createElement("div");
+  loadingDiv.className = "loading-state";
+  loadingDiv.textContent = "Analysing screenshot…";
+  screenshotResult.appendChild(loadingDiv);
+
+  try {
+    // Use the cropped image if the user drew a crop, otherwise the full capture.
+    const imageToSend = croppedDataUrl || screenshotDataUrl;
+    const data = await send("SCREENSHOT_ASK", {
+      dataUrl:  imageToSend,
+      question,
+    });
+
+    screenshotResult.innerHTML = "";
+    const card = document.createElement("div");
+    card.className = "result-card";
+
+    const header = document.createElement("div");
+    header.className = "result-header";
+    const lbl = document.createElement("span");
+    lbl.className = "result-label";
+    lbl.textContent = "Screenshot answer";
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "copy-btn";
+    copyBtn.textContent = "Copy";
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard.writeText(data.answer).then(() => {
+        copyBtn.textContent = "Copied!";
+        setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+      }).catch(() => {});
+    });
+    header.appendChild(lbl);
+    header.appendChild(copyBtn);
+    card.appendChild(header);
+
+    const body = document.createElement("p");
+    body.className = "result-body";
+    body.textContent = data.answer;
+    card.appendChild(body);
+
+    screenshotResult.appendChild(card);
+
+  } catch (err) {
+    screenshotResult.innerHTML = "";
+    const errDiv = document.createElement("div");
+    errDiv.className = "result-error";
+    const msg = err.message || "Could not analyse screenshot.";
+    if (msg === "MISSING_KEY") {
+      errDiv.textContent = "Add a Gemini API key in Settings to use vision.";
+    } else {
+      errDiv.textContent = msg;
+    }
+    screenshotResult.appendChild(errDiv);
+    screenshotResult.hidden = false;
+  } finally {
+    screenshotAskBtn.disabled = false;
+  }
+}
+
+screenshotAskBtn.addEventListener("click", runScreenshotAsk);
+
+screenshotQuestion.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    runScreenshotAsk();
+  }
+});
+
 // ── Load settings on startup ──────────────────────────────────────────────────
 
 async function loadSettings() {
@@ -743,6 +1179,60 @@ async function loadSettings() {
 }
 
 settingsBtn.addEventListener("click", openSettings);
+
+// ── Theme (dark / light mode) ─────────────────────────────────────────────────
+
+const themeToggleBtn = document.getElementById("theme-toggle");
+const themeSunIcon   = document.getElementById("theme-icon-sun");
+const themeMoonIcon  = document.getElementById("theme-icon-moon");
+const root           = document.documentElement;
+
+/**
+ * Apply a theme to the panel.
+ * @param {"dark"|"light"|"system"} theme
+ */
+function applyTheme(theme) {
+  if (theme === "dark") {
+    root.setAttribute("data-theme", "dark");
+    themeSunIcon.hidden  = false; // show sun (click to go light)
+    themeMoonIcon.hidden = true;
+    themeToggleBtn.title = "Switch to light mode";
+  } else if (theme === "light") {
+    root.setAttribute("data-theme", "light");
+    themeSunIcon.hidden  = true;
+    themeMoonIcon.hidden = false; // show moon (click to go dark)
+    themeToggleBtn.title = "Switch to dark mode";
+  } else {
+    // system — remove override, let CSS media query decide
+    root.removeAttribute("data-theme");
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    themeSunIcon.hidden  = prefersDark;  // dark system → show sun
+    themeMoonIcon.hidden = !prefersDark; // light system → show moon
+    themeToggleBtn.title = prefersDark ? "Switch to light mode" : "Switch to dark mode";
+  }
+}
+
+// Load saved theme preference.
+(function initTheme() {
+  const saved = localStorage.getItem("sahayak-theme") || "system";
+  applyTheme(saved);
+})();
+
+themeToggleBtn.addEventListener("click", () => {
+  const current = root.getAttribute("data-theme") || "system";
+  // Cycle: system → dark → light → dark (once user has toggled, stay manual)
+  let next;
+  if (current === "dark")  next = "light";
+  else                     next = "dark";
+  localStorage.setItem("sahayak-theme", next);
+  applyTheme(next);
+});
+
+// Keep icon in sync if user changes system theme while panel is open.
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  const saved = localStorage.getItem("sahayak-theme") || "system";
+  if (saved === "system") applyTheme("system");
+});
 
 // ── Pending context action ────────────────────────────────────────────────────
 

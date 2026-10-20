@@ -3,23 +3,26 @@
  *
  * Unified AI dispatcher with three provider modes:
  *
- *   "auto"   — Groq first for text; Gemini as fallback on retryable errors.
- *              YouTube / vision always go to Gemini regardless of this setting.
- *   "groq"   — Groq only (text tasks). No Gemini fallback.
+ *   "auto"   — Gemini first for all tasks; Groq as automatic text fallback on
+ *              retryable errors. YouTube / vision always go to Gemini first;
+ *              if Gemini fails a text-only Groq fallback is attempted for YouTube.
  *   "gemini" — Gemini only. No Groq fallback.
+ *   "groq"   — Groq only (text tasks). No Gemini fallback.
  *
  * The mode comes from settings.preferredProvider (default: "auto").
  *
  * Exported symbols (available globally after importScripts):
- *   callAI(opts)            → Promise<string>   text tasks, Groq-first
- *   callAIGeminiOnly(opts)  → Promise<string>   YouTube / vision, Gemini only
+ *   callAI(opts)                    → Promise<string>   text tasks, Gemini-first
+ *   callAIGeminiOnly(opts)          → Promise<string>   vision tasks, Gemini only (no fallback)
+ *   callAIGeminiWithGroqFallback(opts) → Promise<string>   YouTube: Gemini video first, Groq text fallback
  *
  * opts shape:
  *   {
- *     model:       string,   // GEMINI_FLASH_LITE (used only when Gemini runs)
- *     prompt:      string,
- *     settings:    { geminiApiKey, groqApiKey, preferredProvider },
- *     maxTokens?:  number,   // task-specific cap; overrides default in clients
+ *     model:        string,   // GEMINI_FLASH_LITE or GEMINI_FLASH
+ *     prompt:       string,   // text prompt (for Gemini text / Groq)
+ *     videoUrl?:    string,   // canonical YouTube URL (for Gemini video path only)
+ *     settings:     { geminiApiKey, groqApiKey, preferredProvider },
+ *     maxTokens?:   number,   // task-specific cap; overrides default in clients
  *   }
  */
 
@@ -76,16 +79,20 @@ async function tryGroq(prompt, groqKey, maxTokens) {
   return generateContentGroq(prompt, groqKey, maxTokens);
 }
 
-// ── Main dispatcher (text tasks — Groq-first) ─────────────────────────────────
+async function tryGeminiVideo(model, videoUrl, prompt, geminiKey, maxTokens) {
+  return generateContentWithVideo(model, videoUrl, prompt, geminiKey, maxTokens);
+}
+
+// ── Main dispatcher (text tasks — Gemini-first) ───────────────────────────────
 
 /**
  * Call the AI provider for text tasks.
  *
- * Default mode ("auto"): try Groq first; fall back to Gemini on retryable
+ * Default mode ("auto"): try Gemini first; fall back to Groq on retryable
  * errors. If only one key is set, use that provider directly.
  *
- * "groq"   → Groq only.
  * "gemini" → Gemini only.
+ * "groq"   → Groq only (text tasks).
  *
  * @param {{ model: string, prompt: string, settings: object, maxTokens?: number }} opts
  * @returns {Promise<string>}
@@ -112,37 +119,43 @@ async function callAI(opts) {
     return tryGroq(prompt, groqKey, maxTokens);
   }
 
-  // ── "auto" mode: Groq-first ───────────────────────────────────────────────
+  // ── "auto" mode: Gemini-first ─────────────────────────────────────────────
 
   // Only one key → use that provider directly.
-  if (groqKey && !geminiKey) return tryGroq(prompt, groqKey, maxTokens);
   if (geminiKey && !groqKey) return tryGemini(model, prompt, geminiKey, maxTokens);
+  if (groqKey && !geminiKey) return tryGroq(prompt, groqKey, maxTokens);
 
-  // Both keys → try Groq first, fall back to Gemini.
+  // Both keys → try Gemini first, fall back to Groq on retryable errors.
   let firstErr = null;
   try {
-    return await tryGroq(prompt, groqKey, maxTokens);
+    return await tryGemini(model, prompt, geminiKey, maxTokens);
   } catch (err) {
     firstErr = err;
     if (!isRetryable(err)) {
-      // Auth error on Groq — not worth trying Gemini for the same prompt.
+      // Auth / bad-request error on Gemini — not worth trying Groq.
       throw err;
     }
   }
 
-  // Groq failed with a retryable error → try Gemini.
+  // Gemini failed with a retryable error → fall back to Groq.
   try {
-    return await tryGemini(model, prompt, geminiKey, maxTokens);
-  } catch (geminiErr) {
-    const msg = groqErrToString(firstErr) + " Gemini fallback also failed: " + geminiErrToString(geminiErr);
-    throw makeError(firstErr.code, msg, firstErr.status);
+    return await tryGroq(prompt, groqKey, maxTokens);
+  } catch (groqErr) {
+    // Both providers failed — return a single clear message.
+    if (groqErr.code === "MISSING_KEY") {
+      throw firstErr; // Groq key not set, surface the Gemini error.
+    }
+    throw makeError(
+      firstErr.code,
+      "Rate limit reached on all AI providers. Wait a moment and try again.",
+      firstErr.status
+    );
   }
 }
 
 /**
- * Gemini-only call — no Groq fallback, ignores preferredProvider.
- * Required for YouTube URL summarisation and vision tasks (Groq cannot
- * process video or image data).
+ * Vision-only call — Gemini only, no Groq fallback (Groq cannot process images).
+ * Ignores preferredProvider.
  *
  * @param {{ model: string, prompt: string, settings: object, maxTokens?: number }} opts
  * @returns {Promise<string>}
@@ -151,5 +164,95 @@ async function callAIGeminiOnly(opts) {
   const { model, prompt, settings, maxTokens } = opts;
   const geminiKey = settings && settings.geminiApiKey;
   if (!geminiKey) throw makeError("MISSING_KEY", "MISSING_KEY");
-  return generateContent(model, prompt, geminiKey, maxTokens);
+  return tryGemini(model, prompt, geminiKey, maxTokens);
+}
+
+/**
+ * YouTube summarisation — Gemini video API first (sends the URL as fileData),
+ * automatic Groq text fallback if Gemini fails with a retryable error.
+ *
+ * The Groq fallback cannot watch the video; it generates a text-only
+ * summary from the prompt alone (no video data). This is still useful
+ * for rate-limit situations where the user just needs some output.
+ *
+ * Always ignores preferredProvider — YouTube is always Gemini-first.
+ *
+ * @param {{
+ *   model:      string,   // GEMINI_FLASH
+ *   videoUrl:   string,   // canonical youtube.com/watch?v=ID URL
+ *   prompt:     string,   // instruction prompt (no URL inside)
+ *   settings:   object,
+ *   maxTokens?: number,
+ * }} opts
+ * @returns {Promise<string>}
+ */
+async function callAIGeminiWithGroqFallback(opts) {
+  const { model, videoUrl, prompt, settings, maxTokens } = opts;
+  const geminiKey = settings && settings.geminiApiKey;
+  const groqKey   = settings && settings.groqApiKey;
+
+  if (!geminiKey && !groqKey) {
+    throw makeError("MISSING_KEY", "MISSING_KEY");
+  }
+
+  // Gemini-only mode: no fallback.
+  if ((settings && settings.preferredProvider) === "groq") {
+    // "groq only" selected — Groq cannot process video, so this is a
+    // text-only summary attempt with just the prompt (no video data).
+    if (!groqKey) throw makeError("MISSING_KEY", "MISSING_KEY");
+    return tryGroq(prompt, groqKey, maxTokens);
+  }
+
+  // Try Gemini video path first.
+  if (geminiKey) {
+    let geminiErr = null;
+    try {
+      return await tryGeminiVideo(model, videoUrl, prompt, geminiKey, maxTokens);
+    } catch (err) {
+      geminiErr = err;
+      if (!isRetryable(err)) {
+        // Auth/bad-request — don't bother falling back.
+        throw err;
+      }
+    }
+
+    // Gemini failed with a retryable error — try Groq text fallback.
+    if (groqKey) {
+      try {
+        return await tryGroq(prompt, groqKey, maxTokens);
+      } catch (groqErr) {
+        const msg = geminiErrToString(geminiErr) + " Groq fallback also failed: " + groqErrToString(groqErr);
+        throw makeError(geminiErr.code, msg, geminiErr.status);
+      }
+    }
+
+    // No Groq key — re-throw the Gemini error.
+    throw geminiErr;
+  }
+
+  // No Gemini key at all — go straight to Groq (text-only).
+  if (!groqKey) throw makeError("MISSING_KEY", "MISSING_KEY");
+  return tryGroq(prompt, groqKey, maxTokens);
+}
+
+/**
+ * Vision call — inline base64 image sent to Gemini Flash.
+ * Never falls back to Groq (text-only, cannot process images).
+ * Ignores preferredProvider.
+ *
+ * @param {{
+ *   model:      string,
+ *   prompt:     string,
+ *   base64:     string,   // raw base64, no data URL prefix
+ *   mimeType:   string,   // "image/png" | "image/jpeg"
+ *   settings:   object,
+ *   maxTokens?: number,
+ * }} opts
+ * @returns {Promise<string>}
+ */
+async function callAIVision(opts) {
+  const { model, prompt, base64, mimeType, settings, maxTokens } = opts;
+  const geminiKey = settings && settings.geminiApiKey;
+  if (!geminiKey) throw makeError("MISSING_KEY", "MISSING_KEY");
+  return generateContentWithImage(model, prompt, base64, mimeType, geminiKey, maxTokens);
 }

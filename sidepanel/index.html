@@ -11,17 +11,23 @@
       <header class="topbar">
         <div class="brand">
           <img class="brand-icon" src="../assets/icon48.png" alt="" width="28" height="28" />
-          <div>
-            <strong>Sahayak</strong>
-            <span class="muted">You approve every action</span>
-          </div>
+          <strong>Sahayak</strong>
         </div>
         <div class="top-actions">
           <div class="lang" role="group" aria-label="Response language">
             <button type="button" class="lang-btn is-active" data-lang="en" id="lang-en">EN</button>
             <button type="button" class="lang-btn" data-lang="hinglish" id="lang-hinglish">Hinglish</button>
           </div>
-          <button type="button" class="link-btn" id="open-settings">Settings</button>
+          <div class="icon-actions">
+            <button type="button" class="icon-btn" id="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">
+              <!-- icon injected by JS based on current mode -->
+              <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
+            <button type="button" class="icon-btn" id="open-settings" aria-label="Settings" title="Settings">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -60,6 +66,52 @@
 
           <!-- Result area for explain — populated after an AI call -->
           <div id="result-area" hidden></div>
+
+          <!-- ── Screenshot section (Slice 2.3) ──────────────────── -->
+          <div class="screenshot-section" id="screenshot-section">
+            <p class="section-label">Screenshot &amp; Ask</p>
+            <button type="button" class="secondary-btn" id="capture-btn">
+              Capture screen
+            </button>
+          </div>
+
+          <!-- Preview + crop + question — shown after capture -->
+          <div id="screenshot-area" hidden>
+            <div class="screenshot-preview-wrap">
+              <canvas id="screenshot-canvas" class="screenshot-canvas"></canvas>
+              <canvas id="crop-canvas" class="crop-canvas" hidden></canvas>
+              <p class="screenshot-hint" id="screenshot-hint">
+                Drag to crop a region, or ask about the full screenshot.
+              </p>
+            </div>
+            <!-- Enlarged crop preview — shown after a crop is drawn -->
+            <div id="crop-preview-wrap" hidden>
+              <p class="screenshot-hint screenshot-hint--crop">Crop preview (enlarged)</p>
+              <canvas id="crop-preview-canvas" class="crop-preview-canvas"></canvas>
+            </div>
+            <div class="screenshot-controls">
+              <button type="button" class="secondary-btn" id="clear-crop-btn" hidden>
+                Clear crop
+              </button>
+              <button type="button" class="secondary-btn secondary-btn--danger" id="clear-capture-btn">
+                Clear capture
+              </button>
+            </div>
+            <div class="screenshot-question-row">
+              <textarea
+                id="screenshot-question"
+                class="chat-input"
+                rows="2"
+                placeholder="Ask about the screenshot…"
+                maxlength="1000"
+                aria-label="Question about screenshot"
+              ></textarea>
+              <button type="button" class="chat-send-btn" id="screenshot-ask-btn" aria-label="Ask">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+              </button>
+            </div>
+            <div id="screenshot-result" hidden></div>
+          </div>
         </section>
 
         <!-- ── Chat view (Slice 2.1) ──────────────────────────────── -->
@@ -86,7 +138,7 @@
                 maxlength="2000"
               ></textarea>
               <button type="button" class="chat-send-btn" id="chat-send-btn" aria-label="Send">
-                ↑
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
               </button>
             </div>
             <div class="chat-actions-row">

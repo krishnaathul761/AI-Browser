@@ -10,7 +10,7 @@
  *   Flash       → screenshot Q&A, failed structured agent JSON, public YouTube if needed
  *
  * Google currently recommends 3.5 Flash-Lite / 3.8 Flash for NEW projects.
- * Legacy IDs (may be restricted for unused accounts): gemini-2.5-flash-lite, gemini-2.5-flash
+ * Legacy IDs (may be restricted for unused accounts): gemini-3.5-flash-lite, gemini-3.8-flash
  *
  * Endpoint (service worker only, never from the page):
  *   POST https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent
@@ -87,11 +87,12 @@ function buildSummaryPrompt(article, language) {
 }
 
 /**
- * YouTube video summary using Gemini's native fileData video support.
+ * YouTube video summary using Gemini's native YouTube URL understanding.
  *
- * The YouTube URL is sent as a fileData part in gemini.js — NOT in this
- * text prompt. This prompt is only the instruction text that accompanies
- * the video. Do not include the URL here.
+ * The YouTube URL is prepended to this prompt as plain text inside
+ * gemini.js — NOT sent as a fileData part. Gemini understands public
+ * YouTube URLs natively when they appear in the prompt text.
+ * Do not include the URL here.
  *
  * The model MUST return JSON — no fences, no extra keys.
  * Timestamps are optional: include them when the video has clear chapters.
@@ -107,11 +108,21 @@ function buildSummaryPrompt(article, language) {
  * `timestamps` may be an empty array when the video has no clear chapters.
  *
  * @param {string} language - "en" | "hinglish"
- * @returns {string} instruction prompt (no URL inside)
+ * @returns {string} instruction prompt (URL is added by gemini.js, not here)
  */
-function buildYouTubePrompt(language) {
+/**
+ * Build a YouTube prompt that includes the video URL directly in the text.
+ * The URL is also sent as a file_data part in gemini.js, but including it
+ * in the text prompt ensures the model always has an explicit reference.
+ *
+ * @param {string} videoUrl - canonical youtube.com/watch?v=ID URL
+ * @param {string} language - "en" | "hinglish"
+ * @returns {string} assembled prompt
+ */
+function buildYouTubePrompt(videoUrl, language) {
   return (
-    "You are a helpful video assistant. Watch the YouTube video provided and return a JSON object summarising its content.\n" +
+    "Watch this YouTube video: " + videoUrl + "\n\n" +
+    "Return a JSON object summarising the video content.\n" +
     "Return ONLY valid JSON — no markdown fences, no extra keys, no explanation.\n\n" +
     "Required JSON shape:\n" +
     '{ "tldr": "<one sentence>", "keyPoints": ["<point 1>", ...], ' +
@@ -226,6 +237,23 @@ function buildDraftPrompt(selectedText, language) {
     '"""\n' +
     selectedText.trim() +
     '\n"""\n\n' +
+    languageSuffix(language)
+  );
+}
+
+/**
+ * Vision prompt — answer a question about a screenshot.
+ *
+ * @param {string} question  - the user's question about the visible content
+ * @param {string} language  - "en" | "hinglish"
+ * @returns {string} assembled prompt
+ */
+function buildVisionPrompt(question, language) {
+  return (
+    "You are a helpful visual assistant. Look at the screenshot carefully and " +
+    "answer the following question based only on what is visible in the image.\n" +
+    "Be concise and direct. If the answer is not visible in the screenshot, say so.\n\n" +
+    "Question: " + question + "\n\n" +
     languageSuffix(language)
   );
 }

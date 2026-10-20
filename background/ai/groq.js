@@ -1,23 +1,13 @@
 /**
  * background/ai/groq.js
  *
- * Text-only Groq API client.
+ * Text-only Groq API client with retry/backoff.
  * Runs exclusively in the service worker — never from a page.
  *
  * IMPORTANT: Groq is text-only. Never pass image data or YouTube URLs here.
  *
- * Exported symbol (available globally after importScripts):
- *   generateContentGroq(prompt, apiKey) → Promise<string>
- *
- * Uses the Groq chat completions endpoint with the fastest free model.
- * Throws typed errors with the same `.code` shape as gemini.js so callers
- * can handle both providers uniformly.
- *
- * Error codes:
- *   MISSING_KEY   — no Groq key provided
- *   API_ERROR     — HTTP 4xx/5xx from Groq (includes .status)
- *   BAD_RESPONSE  — unexpected response shape
- *   NETWORK_ERROR — fetch threw
+ * Retry policy: 429 / 500 / 503 → backoff 1s, 2s, 4s + jitter, max 3 retries.
+ * Honours Retry-After header. Auth errors (401/403) are never retried.
  */
 
 // Groq model: GPT-OSS 20B on Groq hardware.
@@ -42,68 +32,82 @@ function groqError(code, message, status) {
 }
 
 /**
- * Call the Groq chat completions API with a single user message.
+ * Call the Groq chat completions API with retry/backoff.
  *
- * @param {string} prompt     - full assembled prompt string
- * @param {string} apiKey     - Groq API key from chrome.storage.local
- * @param {number} [maxTokens=1024] - output token cap for this call
- * @returns {Promise<string>} - the model's text reply
+ * @param {string} prompt
+ * @param {string} apiKey
+ * @param {number} [maxTokens=1024]
+ * @returns {Promise<string>}
  */
 async function generateContentGroq(prompt, apiKey, maxTokens) {
   if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) {
     throw groqError("MISSING_KEY", "Groq API key is not set.");
   }
 
-  const body = {
+  const body = JSON.stringify({
     model: GROQ_MODEL,
     messages: [{ role: "user", content: prompt }],
     temperature: 0.4,
     max_tokens: (typeof maxTokens === "number" && maxTokens > 0) ? maxTokens : 1024,
+  });
+
+  const headers = {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer " + apiKey.trim(),
   };
 
-  let response;
-  try {
-    response = await fetch(GROQ_API_BASE, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + apiKey.trim(),
-      },
-      body: JSON.stringify(body),
-    });
-  } catch (networkErr) {
-    throw groqError(
-      "NETWORK_ERROR",
-      "Network request to Groq failed: " + (networkErr.message || "unknown error")
-    );
+  const DELAYS  = [1000, 2000, 4000];
+  const JITTER  = 200;
+  let lastErr   = null;
+
+  for (let attempt = 0; attempt <= DELAYS.length; attempt++) {
+    let response;
+    try {
+      response = await fetch(GROQ_API_BASE, { method: "POST", headers, body });
+    } catch (networkErr) {
+      lastErr = groqError("NETWORK_ERROR", "Network request to Groq failed: " + (networkErr.message || "unknown"));
+      if (attempt < DELAYS.length) {
+        await new Promise((r) => setTimeout(r, DELAYS[attempt] + (Math.random() * 2 - 1) * JITTER));
+        continue;
+      }
+      throw lastErr;
+    }
+
+    let json;
+    try {
+      json = await response.json();
+    } catch (_e) {
+      throw groqError("BAD_RESPONSE", "Groq returned a non-JSON response (HTTP " + response.status + ").", response.status);
+    }
+
+    if (!response.ok) {
+      const detail = (json.error && json.error.message) || "HTTP " + response.status;
+      const err    = groqError("API_ERROR", "Groq error: " + detail, response.status);
+
+      // Auth errors — never retry.
+      if (response.status === 401 || response.status === 403 || response.status === 400) throw err;
+
+      lastErr = err;
+      if (attempt < DELAYS.length) {
+        // Honour Retry-After header if present.
+        let delay = DELAYS[attempt] + (Math.random() * 2 - 1) * JITTER;
+        const ra  = response.headers && response.headers.get("Retry-After");
+        if (ra) { const s = parseFloat(ra); if (!isNaN(s) && s > 0) delay = s * 1000; }
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+
+    // Success.
+    try {
+      const content = json.choices[0].message.content;
+      if (typeof content !== "string") throw new Error("not a string");
+      return content;
+    } catch (_e) {
+      throw groqError("BAD_RESPONSE", "Groq response had an unexpected shape.");
+    }
   }
 
-  let json;
-  try {
-    json = await response.json();
-  } catch (_parseErr) {
-    throw groqError(
-      "BAD_RESPONSE",
-      "Groq returned a non-JSON response (HTTP " + response.status + ").",
-      response.status
-    );
-  }
-
-  if (!response.ok) {
-    // Groq error shape: { error: { message, type, code } }
-    const detail =
-      (json.error && json.error.message) ||
-      "HTTP " + response.status;
-    throw groqError("API_ERROR", "Groq error: " + detail, response.status);
-  }
-
-  // OpenAI-compatible response shape:
-  // { choices: [{ message: { content: string } }] }
-  try {
-    const content = json.choices[0].message.content;
-    if (typeof content !== "string") throw new Error("content is not a string");
-    return content;
-  } catch (_shapeErr) {
-    throw groqError("BAD_RESPONSE", "Groq response had an unexpected shape.");
-  }
+  throw lastErr || groqError("API_ERROR", "Groq request failed after retries.");
 }

@@ -7,7 +7,7 @@ const DEFAULT_SETTINGS = {
   translateTarget: "hi",
   dryRunDefault: false,
   maxAgentSteps: 20,
-  preferredProvider: "auto", // "auto" | "gemini" | "groq"
+  preferredProvider: "auto", // "auto" (Gemini-first) | "gemini" | "groq"
 };
 
 const SETTINGS_FIELDS = [
@@ -138,6 +138,12 @@ async function routeMessage(message, _sender) {
 
     case "CONTEXT_MENU_GET":
       return handleContextMenuGet(requestId);
+
+    case "SCREENSHOT_CAPTURE":
+      return handleScreenshotCapture(requestId, message);
+
+    case "SCREENSHOT_ASK":
+      return handleScreenshotAsk(requestId, message);
 
     default:
       return fail(requestId, "Unknown message type");
@@ -322,11 +328,13 @@ async function handleSummaryArticle(requestId, message) {
   // 3. Build prompt → AI with Groq fallback.
   // Groq has an 8K TPM cap — trim article text to stay well within budget.
   // Gemini has a 1M context window so no trimming needed there, but we
-  // apply the same trim for consistency and to keep prompts snappy.
   const trimmedArticle = Object.assign({}, articleData, {
-    text: articleData.text.slice(0, 6000), // ~1.5k tokens input, leaves room for output
+    text: articleData.text.slice(0, 6000),
   });
-  const prompt = buildSummaryPrompt(trimmedArticle, settings.language);
+  // Always generate in English — the panel translates on demand.
+  // This ensures the cache is always English and EN↔Hinglish toggles
+  // always have a clean source to translate from.
+  const prompt = buildSummaryPrompt(trimmedArticle, "en");
 
   let rawText;
   try {
@@ -350,7 +358,7 @@ async function handleSummaryArticle(requestId, message) {
     title: articleData.title || "",
   };
 
-  // Cache by tab URL so repeat views are free.
+  // Cache by tab URL — always in English so the toggle always has a clean source.
   setCachedSummary(tabUrl, result).catch(() => {});
 
   return ok(requestId, result);
@@ -431,15 +439,38 @@ function isRestrictedUrl(url) {
  */
 function geminiErrorMessage(err) {
   if (err.code === "MISSING_KEY") return "MISSING_KEY";
-  if (err.code === "API_ERROR" && err.status === 429)
-    return "Rate limit reached on all AI providers. Wait a moment and try again.";
-  if (err.code === "API_ERROR" && err.status === 400)
+  if (err.code === "API_ERROR" && err.status === 429) {
+    // Extract "retry in Xh Ym Zs" from the Gemini error body when present.
+    const retryMatch = err.message && err.message.match(/retry in\s+([\dhms.]+)/i);
+    if (retryMatch) {
+      const raw = retryMatch[1];
+      const hMatch = raw.match(/(\d+)h/);
+      const mMatch = raw.match(/(\d+)m/);
+      let human = "";
+      if (hMatch) human += hMatch[1] + "h ";
+      if (mMatch) human += mMatch[1] + "m";
+      human = human.trim();
+      const who = (err.message && err.message.includes("gemini-3.8-flash"))
+        ? "Gemini Flash (vision)" : "Gemini";
+      return human
+        ? who + " quota exhausted. Try again in " + human + "."
+        : "Rate limit reached. Wait a moment and try again.";
+    }
+    return "Rate limit reached. Wait a moment and try again.";
+  }
+  if (err.code === "API_ERROR" && err.status === 400) {
+    const msg = err.message || "";
+    if (msg.toLowerCase().includes("api key")) return "Invalid API key. Check your keys in Settings.";
+    if (msg.toLowerCase().includes("safety") || msg.toLowerCase().includes("blocked"))
+      return "The request was blocked by Gemini's safety filters. Try rephrasing.";
+    return "Invalid API key. Check your keys in Settings.";
+  }
+  if (err.code === "API_ERROR" && err.status === 401)
     return "Invalid API key. Check your keys in Settings.";
   if (err.code === "API_ERROR" && err.status === 403)
     return "API key does not have access. Check your keys in Settings.";
   if (err.code === "NETWORK_ERROR")
     return "Network error. Check your connection and try again.";
-  // ai.js may return a combined message string directly
   return err.message || "AI request failed.";
 }
 
@@ -483,50 +514,30 @@ async function handleSummaryYouTube(requestId, message) {
     }
   }
 
-  // Gate on API key — YouTube requires Gemini specifically.
+  // Gate on API key — YouTube always tries Gemini first; Groq key allows text fallback.
   const settings = await readSettings();
-  if (!settings.geminiApiKey) {
+  if (!settings.geminiApiKey && !settings.groqApiKey) {
     return fail(requestId, "MISSING_KEY");
   }
 
-  // Build prompt and call Gemini Flash (Gemini-only — YouTube URL not supported by Groq).
-  // The video URL is sent as a fileData part, not in the text prompt.
-  // Retries up to 3 times with exponential backoff on 503 / network errors.
-  const prompt = buildYouTubePrompt(settings.language);
+  // Build prompt and call Gemini Flash first (video fileData path).
+  // If Gemini fails with a retryable error, callAIGeminiWithGroqFallback
+  // automatically retries via Groq's text-only path as a fallback.
+  // The video URL is sent as a fileData part inside callAIGeminiWithGroqFallback.
+  // Always generate in English — panel translates on demand.
+  const prompt = buildYouTubePrompt(canonicalUrl, "en");
 
   let rawText;
-  let lastErr;
-  const delays = [1500, 3000, 6000]; // ms between retries
-
-  for (let attempt = 0; attempt <= delays.length; attempt++) {
-    try {
-      rawText = await generateContentWithVideo(
-        GEMINI_FLASH,
-        canonicalUrl,
-        prompt,
-        settings.geminiApiKey,
-        800  // YouTube summary needs more tokens for timestamps + chapters
-      );
-      lastErr = null;
-      break; // success — exit retry loop
-    } catch (err) {
-      lastErr = err;
-      // Only retry on overload / server errors. Auth errors fail immediately.
-      const retryable =
-        err.code === "NETWORK_ERROR" ||
-        (err.code === "API_ERROR" && (err.status === 503 || err.status === 500 || err.status === 529));
-
-      if (!retryable || attempt === delays.length) {
-        break; // not retryable or out of attempts
-      }
-
-      // Wait before next attempt.
-      await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
-    }
-  }
-
-  if (lastErr) {
-    return fail(requestId, geminiErrorMessage(lastErr));
+  try {
+    rawText = await callAIGeminiWithGroqFallback({
+      model:      GEMINI_FLASH,
+      videoUrl:   canonicalUrl,
+      prompt,
+      settings,
+      maxTokens:  800, // YouTube summary needs more tokens for timestamps + chapters
+    });
+  } catch (err) {
+    return fail(requestId, geminiErrorMessage(err));
   }
 
   // Parse the structured JSON response.
@@ -765,12 +776,11 @@ async function handleTranslateResult(requestId, message) {
 
 // ── Chat state ────────────────────────────────────────────────────────────────
 //
-// Keyed by tabId. Resets automatically when the page URL changes.
+// In-memory store keyed by tabId.
 // Shape: { [tabId]: { messages: [{role, text}], pageUrl: string } }
 //
-// Stored in memory only (SW can sleep — if the SW wakes with no state,
-// the panel detects the reset and shows a "context lost" message).
-// Full persistence is a Phase 3 enhancement.
+// pageUrl is also persisted to chrome.storage.local (key: chatPageUrl_<tabId>)
+// so the SW can detect a URL change even after it has slept and lost memory.
 
 const chatByTab = {};
 const CHAT_MAX_HISTORY = 20; // keep last 20 turns (10 pairs)
@@ -810,14 +820,25 @@ async function handleChatSend(requestId, message) {
     return fail(requestId, "RESTRICTED_PAGE");
   }
 
-  // Initialise or reset chat state for this tab.
-  let resetContext = false;
-  const existingChat = chatByTab[tabId];
-  const urlChanged = existingChat && existingChat.pageUrl !== currentUrl;
+  // ── Detect URL change ────────────────────────────────────────────────────
+  // Track purely in memory — storage-based tracking caused false negatives
+  // because currentUrl was already written before comparison on SW wakes.
 
-  if (!existingChat || urlChanged) {
-    // Only flag a reset if there was actual history to lose.
-    resetContext = urlChanged && existingChat.messages.length > 0;
+  const inMemory   = chatByTab[tabId];
+
+  // URL-change detection:
+  // - If we have in-memory state for this tab, compare URLs directly.
+  //   This is reliable and doesn't depend on storage timing.
+  // - If no in-memory state (SW woke fresh), we can't reliably detect a
+  //   URL change — don't false-positive. The user just gets a clean context.
+  const urlChanged = Boolean(
+    inMemory && inMemory.pageUrl && inMemory.pageUrl !== currentUrl
+  );
+
+  let resetContext = false;
+
+  if (!inMemory || urlChanged) {
+    resetContext = urlChanged; // only notify when we actually saw the old URL
     chatByTab[tabId] = { messages: [], pageUrl: currentUrl };
   }
 
@@ -898,10 +919,117 @@ async function handleChatSend(requestId, message) {
 async function handleChatReset(requestId, message) {
   const payload = message && message.payload;
   const tabId   = await resolveTabId(payload && payload.tabId);
-  if (tabId !== null && chatByTab[tabId]) {
+  if (tabId !== null) {
     delete chatByTab[tabId];
   }
   return ok(requestId, { reset: true });
+}
+
+// ── SCREENSHOT_CAPTURE ────────────────────────────────────────────────────────
+
+/**
+ * Capture the visible tab as a PNG data URL.
+ * The panel stores this temporarily in memory — never persisted to storage.
+ *
+ * Success data: { dataUrl: string, tabId: number, tabUrl: string }
+ */
+async function handleScreenshotCapture(requestId, message) {
+  const payload = message && message.payload;
+
+  // Find the active http/https tab across all normal windows.
+  let targetTab = null;
+  try {
+    const allWindows = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
+    for (const win of allWindows) {
+      const activeTab = (win.tabs || []).find((t) => t.active);
+      if (activeTab && activeTab.url &&
+          (activeTab.url.startsWith("http://") || activeTab.url.startsWith("https://"))) {
+        targetTab = activeTab;
+        break;
+      }
+    }
+  } catch (_e) {}
+
+  if (!targetTab) {
+    return fail(requestId, "No browser tab found to capture.");
+  }
+
+  const tabUrl = targetTab.url || "";
+
+  if (isRestrictedUrl(tabUrl)) {
+    return fail(requestId, "RESTRICTED_PAGE");
+  }
+
+  // captureVisibleTab called without windowId uses the last focused window.
+  // Calling it with null explicitly avoids the cross-window permission error.
+  let dataUrl;
+  try {
+    dataUrl = await chrome.tabs.captureVisibleTab(null, { format: "png" });
+  } catch (err) {
+    return fail(requestId, "Could not capture the tab: " + (err.message || "unknown error"));
+  }
+
+  if (!dataUrl || !dataUrl.startsWith("data:image/")) {
+    return fail(requestId, "Capture returned an unexpected format.");
+  }
+
+  return ok(requestId, { dataUrl, tabUrl });
+}
+
+// ── SCREENSHOT_ASK ────────────────────────────────────────────────────────────
+
+/**
+ * Send a (possibly cropped) screenshot to Gemini Flash vision and return
+ * the model's answer to the user's question.
+ *
+ * Payload shape:
+ *   { dataUrl: string, question: string }
+ *   dataUrl  — base64 PNG data URL (full or cropped by the panel)
+ *   question — the user's question about the image
+ *
+ * Gemini only — never sends image data to Groq (text-only).
+ *
+ * Success data: { answer: string }
+ */
+async function handleScreenshotAsk(requestId, message) {
+  const payload  = message && message.payload;
+  const dataUrl  = payload && payload.dataUrl;
+  const question = payload && payload.question;
+
+  if (!dataUrl || !dataUrl.startsWith("data:image/")) {
+    return fail(requestId, "No screenshot to analyse. Capture the screen first.");
+  }
+  if (!question || !question.trim()) {
+    return fail(requestId, "Please type a question about the screenshot.");
+  }
+
+  const settings = await readSettings();
+  if (!settings.geminiApiKey) {
+    return fail(requestId, "MISSING_KEY");
+  }
+
+  // Strip the data URL prefix to get the raw base64.
+  // Format: "data:image/png;base64,<base64data>"
+  const base64 = dataUrl.split(",")[1];
+  if (!base64) {
+    return fail(requestId, "Screenshot data is malformed.");
+  }
+
+  const prompt = buildVisionPrompt(question.trim(), settings.language);
+
+  try {
+    const answer = await callAIVision({
+      model:    GEMINI_FLASH,
+      prompt,
+      base64,
+      mimeType: "image/png",
+      settings,
+      maxTokens: 600,
+    });
+    return ok(requestId, { answer: answer.trim() });
+  } catch (err) {
+    return fail(requestId, geminiErrorMessage(err));
+  }
 }
 
 // ── CONTEXT_MENU_GET ──────────────────────────────────────────────────────────

@@ -68,21 +68,21 @@
           <label class="choice">
             <input type="radio" name="preferredProvider" value="auto" checked />
             <span>
-              <strong>Auto</strong> — use Groq first; switch to Gemini automatically if Groq is unavailable (YouTube &amp; vision always use Gemini)
+              <strong>Auto</strong> — use Gemini first; switch to Groq automatically if Gemini is unavailable (vision tasks always use Gemini only)
             </span>
           </label>
 
           <label class="choice">
             <input type="radio" name="preferredProvider" value="gemini" />
             <span>
-              <strong>Gemini only</strong> — always use Gemini (required for YouTube &amp; vision)
+              <strong>Gemini only</strong> — always use Gemini (required for vision; YouTube &amp; text fallback disabled)
             </span>
           </label>
 
           <label class="choice">
             <input type="radio" name="preferredProvider" value="groq" />
             <span>
-              <strong>Groq only</strong> — always use Groq (text tasks only, faster on free tier)
+              <strong>Groq only</strong> — always use Groq (text tasks only; YouTube will use text-only summary, vision unavailable)
             </span>
           </label>
         </fieldset>

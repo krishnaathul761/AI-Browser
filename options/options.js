@@ -39,11 +39,11 @@ function updateProviderStatus(settings) {
     kind = "warn";
   } else if (provider === "auto") {
     if (hasGemini && hasGroq) {
-      text = "✓ Groq is primary · Gemini ready as fallback (YouTube & vision always use Gemini)";
-    } else if (hasGroq) {
-      text = "✓ Groq is active · Add Gemini key for YouTube & vision support";
+      text = "✓ Gemini is primary · Groq ready as automatic fallback (vision tasks use Gemini only)";
+    } else if (hasGemini) {
+      text = "✓ Gemini is active · Add Groq key for automatic fallback on rate limits";
     } else {
-      text = "✓ Gemini is active (only key saved) · Add Groq key for faster text tasks";
+      text = "✓ Groq is active (only key saved) · Add Gemini key to enable YouTube video summaries &amp; vision";
     }
   } else if (provider === "gemini") {
     text = hasGemini
@@ -52,7 +52,7 @@ function updateProviderStatus(settings) {
     kind = hasGemini ? "ok" : "warn";
   } else if (provider === "groq") {
     text = hasGroq
-      ? "✓ Groq only mode active (text tasks only)"
+      ? "✓ Groq only mode active (text tasks only; YouTube summaries will be text-only)"
       : "⚠ Groq selected but no Groq key saved";
     kind = hasGroq ? "ok" : "warn";
   }
