@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Practice Shop — Filter &amp; Browse | Sahayak</title>
+  <meta name="description" content="A practice e-commerce shop page for Sahayak agent testing. Search products, apply filters, and browse the product list." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0b0d12;
+      --surface: #12151d;
+      --card: #181c26;
+      --card-hover: #1e2330;
+      --card-border: rgba(255,255,255,0.07);
+      --accent: #f59e0b;
+      --accent-2: #fbbf24;
+      --accent-glow: rgba(245,158,11,0.2);
+      --purple: #8b5cf6;
+      --purple-light: #a78bfa;
+      --success: #34d399;
+      --danger: #f87171;
+      --text: #e8eaf0;
+      --text-muted: #8b90a0;
+      --text-dim: #4a5068;
+      --input-bg: rgba(255,255,255,0.04);
+      --input-border: rgba(255,255,255,0.10);
+      --input-focus: rgba(245,158,11,0.4);
+      --radius: 10px;
+      --radius-lg: 16px;
+      --shadow: 0 8px 32px rgba(0,0,0,0.5);
+      --transition: 0.2s ease;
+      --star: #fbbf24;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 70% 40% at 10% 5%, rgba(245,158,11,0.07) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 30% at 90% 90%, rgba(139,92,246,0.07) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Top bar ── */
+    .topbar {
+      background: rgba(18,21,29,0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--card-border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 0 24px;
+    }
+    .topbar-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      height: 60px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      flex-shrink: 0;
+    }
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--purple) 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+    .logo-text {
+      font-size: 1.1rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent-2) 0%, var(--purple-light) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .topbar-search {
+      flex: 1;
+      max-width: 480px;
+      position: relative;
+    }
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      font-size: 15px;
+      pointer-events: none;
+    }
+    #search-input {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 999px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.88rem;
+      padding: 9px 16px 9px 38px;
+      outline: none;
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    #search-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--input-focus);
+    }
+    #search-input::placeholder { color: var(--text-dim); }
+
+    #search-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 18px;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+      border: none;
+      border-radius: 999px;
+      color: #000;
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--transition);
+      white-space: nowrap;
+    }
+    #search-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px var(--accent-glow); }
+
+    .practice-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(139,92,246,0.15);
+      border: 1px solid rgba(139,92,246,0.3);
+      color: var(--purple-light);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      padding: 3px 10px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    /* ── Layout ── */
+    .page-layout {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 24px;
+      padding: 28px 24px 64px;
+      position: relative;
+      z-index: 1;
+    }
+    @media (max-width: 768px) {
+      .page-layout { grid-template-columns: 1fr; }
+      .sidebar { order: -1; }
+    }
+
+    /* ── Sidebar / Filters ── */
+    .sidebar { flex-shrink: 0; }
+
+    .filter-card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .filter-card-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent-2);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .clear-link {
+      font-size: 10px;
+      font-weight: 500;
+      text-transform: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      letter-spacing: 0;
+      transition: color var(--transition);
+    }
+    .clear-link:hover { color: var(--danger); }
+
+    /* Price range */
+    .price-range {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .price-input {
+      flex: 1;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.82rem;
+      padding: 7px 10px;
+      outline: none;
+      transition: border-color var(--transition);
+    }
+    .price-input:focus { border-color: var(--accent); }
+    .price-sep { color: var(--text-dim); font-size: 0.8rem; }
+
+    /* Rating filter */
+    .rating-options { display: flex; flex-direction: column; gap: 8px; }
+    .rating-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      padding: 7px 10px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .rating-option:hover { background: rgba(255,255,255,0.03); border-color: rgba(245,158,11,0.2); }
+    .rating-option input[type="radio"] { accent-color: var(--accent); }
+    .stars { color: var(--star); font-size: 13px; letter-spacing: 1px; }
+    .rating-label { font-size: 0.82rem; color: var(--text-muted); }
+
+    /* Category filter */
+    .category-list { display: flex; flex-direction: column; gap: 6px; }
+    .category-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      padding: 7px 10px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      transition: all var(--transition);
+    }
+    .category-item:hover { background: rgba(255,255,255,0.03); border-color: rgba(245,158,11,0.2); color: var(--text); }
+    .category-item input[type="checkbox"] { accent-color: var(--accent); }
+    .category-count {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--text-dim);
+      background: rgba(255,255,255,0.05);
+      padding: 1px 7px;
+      border-radius: 999px;
+    }
+
+    /* Sort filter */
+    .sort-select {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.85rem;
+      padding: 9px 12px;
+      outline: none;
+      cursor: pointer;
+      transition: border-color var(--transition);
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b90a0' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 32px;
+    }
+    .sort-select:focus { border-color: var(--accent); }
+    .sort-select option { background: var(--surface); }
+
+    #apply-filters-btn {
+      width: 100%;
+      padding: 11px;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+      border: none;
+      border-radius: var(--radius);
+      color: #000;
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all var(--transition);
+      margin-top: 4px;
+    }
+    #apply-filters-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px var(--accent-glow); }
+
+    #reset-filters-btn {
+      width: 100%;
+      padding: 9px;
+      background: transparent;
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition);
+      margin-top: 8px;
+    }
+    #reset-filters-btn:hover { background: rgba(248,113,113,0.08); border-color: rgba(248,113,113,0.3); color: var(--danger); }
+
+    /* ── Main content ── */
+    .main-content { min-width: 0; }
+
+    .results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .results-count {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+    .results-count strong { color: var(--text); }
+
+    .active-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+    .filter-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(245,158,11,0.12);
+      border: 1px solid rgba(245,158,11,0.3);
+      color: var(--accent-2);
+      font-size: 11px;
+      font-weight: 500;
+      padding: 3px 10px;
+      border-radius: 999px;
+    }
+    .filter-tag .remove {
+      cursor: pointer;
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 13px;
+      line-height: 1;
+    }
+    .filter-tag .remove:hover { color: var(--danger); }
+
+    /* ── Product grid ── */
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 20px;
+    }
+
+    .product-card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    .product-card:hover {
+      background: var(--card-hover);
+      border-color: rgba(245,158,11,0.25);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+    }
+
+    .product-badge {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+      z-index: 1;
+    }
+    .badge-sale { background: rgba(248,113,113,0.2); color: var(--danger); border: 1px solid rgba(248,113,113,0.3); }
+    .badge-new { background: rgba(52,211,153,0.2); color: var(--success); border: 1px solid rgba(52,211,153,0.3); }
+    .badge-hot { background: rgba(245,158,11,0.2); color: var(--accent-2); border: 1px solid rgba(245,158,11,0.3); }
+
+    .product-image {
+      width: 100%;
+      aspect-ratio: 1;
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+    }
+    .product-info { padding: 14px; }
+    .product-category {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--purple-light);
+      margin-bottom: 4px;
+    }
+    .product-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+      line-height: 1.3;
+    }
+    .product-rating {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 10px;
+    }
+    .product-stars { color: var(--star); font-size: 11px; }
+    .product-rating-num { font-size: 11px; color: var(--text-muted); }
+    .product-price-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .product-price {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--accent-2);
+    }
+    .product-price-old {
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      text-decoration: line-through;
+    }
+    .add-to-cart {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      background: rgba(245,158,11,0.15);
+      border: 1px solid rgba(245,158,11,0.3);
+      border-radius: 8px;
+      color: var(--accent-2);
+      font-size: 16px;
+      cursor: pointer;
+      transition: all var(--transition);
+      flex-shrink: 0;
+    }
+    .add-to-cart:hover {
+      background: rgba(245,158,11,0.3);
+      transform: scale(1.1);
+    }
+    .add-to-cart.added {
+      background: rgba(52,211,153,0.2);
+      border-color: rgba(52,211,153,0.4);
+      color: var(--success);
+    }
+
+    /* ── No results ── */
+    .no-results {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+      display: none;
+    }
+    .no-results-icon { font-size: 48px; margin-bottom: 12px; }
+    .no-results h3 { font-size: 1.1rem; margin-bottom: 6px; color: var(--text); }
+
+    /* ── Cart toast ── */
+    .cart-toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--card);
+      border: 1px solid rgba(52,211,153,0.3);
+      border-radius: var(--radius);
+      padding: 12px 18px;
+      font-size: 0.85rem;
+      color: var(--success);
+      box-shadow: var(--shadow);
+      z-index: 9999;
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all 0.3s ease;
+    }
+    .cart-toast.show { transform: translateY(0); opacity: 1; }
+
+    /* ── Collected table ── */
+    .collected-section {
+      margin-top: 32px;
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      display: none;
+    }
+    .collected-section.show { display: block; animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .collected-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--accent-2);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .clear-cart-btn {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-dim);
+      background: none;
+      border: none;
+      cursor: pointer;
+      transition: color var(--transition);
+    }
+    .clear-cart-btn:hover { color: var(--danger); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+    th {
+      text-align: left;
+      color: var(--text-dim);
+      font-weight: 500;
+      font-size: 0.72rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    td {
+      padding: 9px 10px;
+      color: var(--text-muted);
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+    }
+    td:first-child { color: var(--text); }
+    tr:last-child td { border-bottom: none; }
+    .td-price { color: var(--accent-2); font-weight: 600; }
+    .td-rating { color: var(--star); }
+  </style>
+</head>
+<body>
+
+<!-- Topbar -->
+<header class="topbar">
+  <div class="topbar-inner">
+    <a href="#" class="logo" id="logo-link">
+      <div class="logo-icon">&#x1F6CD;</div>
+      <span class="logo-text">TechMart</span>
+    </a>
+    <div class="topbar-search">
+      <span class="search-icon">&#x1F50D;</span>
+      <input type="text" id="search-input" placeholder="Search products..." aria-label="Search products" />
+    </div>
+    <button id="search-btn" onclick="applyFilters()">Search</button>
+    <div class="practice-badge">&#x1F916; Practice Page</div>
+  </div>
+</header>
+
+<!-- Page layout -->
+<div class="page-layout">
+
+  <!-- Sidebar filters -->
+  <aside class="sidebar" aria-label="Product filters">
+
+    <div class="filter-card">
+      <div class="filter-card-title">
+        Sort By
+      </div>
+      <select id="sort-select" class="sort-select" name="sort" onchange="applyFilters()">
+        <option value="relevance">Relevance</option>
+        <option value="price-asc">Price: Low to High</option>
+        <option value="price-desc">Price: High to Low</option>
+        <option value="rating">Highest Rated</option>
+        <option value="newest">Newest First</option>
+        <option value="popular">Most Popular</option>
+      </select>
+    </div>
+
+    <div class="filter-card">
+      <div class="filter-card-title">
+        Category
+        <span class="clear-link" id="clear-category" onclick="clearFilter('category')">Clear</span>
+      </div>
+      <div class="category-list">
+        <label class="category-item">
+          <input type="checkbox" id="cat-laptop" name="category" value="Laptops" onchange="applyFilters()" />
+          Laptops
+          <span class="category-count">8</span>
+        </label>
+        <label class="category-item">
+          <input type="checkbox" id="cat-phone" name="category" value="Phones" onchange="applyFilters()" />
+          Phones
+          <span class="category-count">6</span>
+        </label>
+        <label class="category-item">
+          <input type="checkbox" id="cat-audio" name="category" value="Audio" onchange="applyFilters()" />
+          Audio
+          <span class="category-count">5</span>
+        </label>
+        <label class="category-item">
+          <input type="checkbox" id="cat-tablet" name="category" value="Tablets" onchange="applyFilters()" />
+          Tablets
+          <span class="category-count">4</span>
+        </label>
+        <label class="category-item">
+          <input type="checkbox" id="cat-accessory" name="category" value="Accessories" onchange="applyFilters()" />
+          Accessories
+          <span class="category-count">7</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="filter-card">
+      <div class="filter-card-title">
+        Price Range
+        <span class="clear-link" id="clear-price" onclick="clearFilter('price')">Clear</span>
+      </div>
+      <div class="price-range">
+        <input type="number" id="price-min" name="price-min" class="price-input" placeholder="Min" min="0" />
+        <span class="price-sep">-</span>
+        <input type="number" id="price-max" name="price-max" class="price-input" placeholder="Max" min="0" />
+      </div>
+      <button onclick="applyFilters()" style="width:100%;padding:8px;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);border-radius:8px;color:var(--accent-2);font-family:inherit;font-size:0.82rem;font-weight:500;cursor:pointer;" id="apply-price-btn">Apply Price</button>
+    </div>
+
+    <div class="filter-card">
+      <div class="filter-card-title">
+        Min Rating
+        <span class="clear-link" id="clear-rating" onclick="clearFilter('rating')">Clear</span>
+      </div>
+      <div class="rating-options">
+        <label class="rating-option">
+          <input type="radio" name="min-rating" id="rating-any" value="0" checked onchange="applyFilters()" />
+          <span class="rating-label">Any rating</span>
+        </label>
+        <label class="rating-option">
+          <input type="radio" name="min-rating" id="rating-3" value="3" onchange="applyFilters()" />
+          <span class="stars">&#x2605;&#x2605;&#x2605;</span>
+          <span class="rating-label">3+ stars</span>
+        </label>
+        <label class="rating-option">
+          <input type="radio" name="min-rating" id="rating-4" value="4" onchange="applyFilters()" />
+          <span class="stars">&#x2605;&#x2605;&#x2605;&#x2605;</span>
+          <span class="rating-label">4+ stars</span>
+        </label>
+        <label class="rating-option">
+          <input type="radio" name="min-rating" id="rating-45" value="4.5" onchange="applyFilters()" />
+          <span class="stars">&#x2605;&#x2605;&#x2605;&#x2605;&#x2605;</span>
+          <span class="rating-label">4.5+ stars</span>
+        </label>
+      </div>
+    </div>
+
+    <button id="apply-filters-btn" onclick="applyFilters()">&#x2713; Apply Filters</button>
+    <button id="reset-filters-btn" onclick="resetFilters()">&#x21BA; Reset All</button>
+
+  </aside>
+
+  <!-- Main product area -->
+  <main class="main-content">
+
+    <div class="results-header">
+      <div class="results-count">Showing <strong id="result-count">30</strong> products</div>
+    </div>
+
+    <div class="active-filters" id="active-filters"></div>
+
+    <div class="product-grid" id="product-grid"></div>
+    <div class="no-results" id="no-results">
+      <div class="no-results-icon">&#x1F50E;</div>
+      <h3>No products found</h3>
+      <p>Try adjusting your filters or search term.</p>
+    </div>
+
+    <!-- Collected items table -->
+    <div class="collected-section" id="collected-section">
+      <div class="collected-title">
+        &#x1F6D2; Cart Items
+        <button class="clear-cart-btn" id="clear-cart-btn" onclick="clearCart()">Clear cart</button>
+      </div>
+      <table id="collected-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Product</th>
+            <th>Category</th>
+            <th>Price</th>
+            <th>Rating</th>
+          </tr>
+        </thead>
+        <tbody id="collected-tbody"></tbody>
+      </table>
+    </div>
+
+  </main>
+</div>
+
+<!-- Cart toast -->
+<div class="cart-toast" id="cart-toast">&#x2713; Added to cart</div>
+
+<script>
+  // ── Product data ──────────────────────────────────────────
+  const PRODUCTS = [
+    { id:1,  name:'UltraBook Pro 14',       category:'Laptops',     price:1299, oldPrice:1499, rating:4.7, badge:'hot',  emoji:'&#x1F4BB;', isNew:false },
+    { id:2,  name:'SwiftBook Air 13',        category:'Laptops',     price:899,  oldPrice:1099, rating:4.5, badge:'sale', emoji:'&#x1F4BB;', isNew:false },
+    { id:3,  name:'GameRig X17',             category:'Laptops',     price:1899, oldPrice:null, rating:4.6, badge:null,   emoji:'&#x1F5A5;', isNew:true  },
+    { id:4,  name:'WorkStation 15',          category:'Laptops',     price:1099, oldPrice:null, rating:4.3, badge:null,   emoji:'&#x1F4BB;', isNew:false },
+    { id:5,  name:'PixelPhone 12 Pro',       category:'Phones',      price:799,  oldPrice:899,  rating:4.8, badge:'hot',  emoji:'&#x1F4F1;', isNew:false },
+    { id:6,  name:'ZenPhone Ultra',          category:'Phones',      price:699,  oldPrice:null, rating:4.6, badge:null,   emoji:'&#x1F4F1;', isNew:true  },
+    { id:7,  name:'BudgetPhone 5G',          category:'Phones',      price:299,  oldPrice:349,  rating:4.1, badge:'sale', emoji:'&#x1F4F1;', isNew:false },
+    { id:8,  name:'FoldPhone Elite',         category:'Phones',      price:1599, oldPrice:null, rating:4.4, badge:'new',  emoji:'&#x1F4F1;', isNew:true  },
+    { id:9,  name:'SoundPods X3',            category:'Audio',       price:149,  oldPrice:199,  rating:4.7, badge:'sale', emoji:'&#x1F3A7;', isNew:false },
+    { id:10, name:'StudioHeadphones Pro',    category:'Audio',       price:349,  oldPrice:null, rating:4.9, badge:'hot',  emoji:'&#x1F3A7;', isNew:false },
+    { id:11, name:'BassEars 200',            category:'Audio',       price:89,   oldPrice:null, rating:4.2, badge:null,   emoji:'&#x1F3A7;', isNew:false },
+    { id:12, name:'NoiseClear ANC Buds',     category:'Audio',       price:229,  oldPrice:269,  rating:4.5, badge:'sale', emoji:'&#x1F3A7;', isNew:false },
+    { id:13, name:'TabPro 11',               category:'Tablets',     price:599,  oldPrice:699,  rating:4.6, badge:'sale', emoji:'&#x1F4F2;', isNew:false },
+    { id:14, name:'DrawTab Creative',        category:'Tablets',     price:449,  oldPrice:null, rating:4.4, badge:null,   emoji:'&#x1F4F2;', isNew:true  },
+    { id:15, name:'KidsTab Lite',            category:'Tablets',     price:199,  oldPrice:null, rating:4.0, badge:null,   emoji:'&#x1F4F2;', isNew:false },
+    { id:16, name:'MechKey TKL RGB',         category:'Accessories', price:119,  oldPrice:149,  rating:4.6, badge:'sale', emoji:'&#x2328;', isNew:false  },
+    { id:17, name:'ErgoPad Pro',             category:'Accessories', price:39,   oldPrice:null, rating:4.3, badge:null,   emoji:'&#x1F5B1;', isNew:false },
+    { id:18, name:'4K WebCam Ultra',         category:'Accessories', price:89,   oldPrice:109,  rating:4.5, badge:'sale', emoji:'&#x1F4F7;', isNew:false },
+    { id:19, name:'USB-C Hub 10-in-1',       category:'Accessories', price:59,   oldPrice:null, rating:4.4, badge:null,   emoji:'&#x1F50C;', isNew:true  },
+    { id:20, name:'Wireless Charger Duo',    category:'Accessories', price:49,   oldPrice:null, rating:4.2, badge:null,   emoji:'&#x26A1;', isNew:false  },
+    { id:21, name:'Creator Laptop 16',       category:'Laptops',     price:1499, oldPrice:null, rating:4.5, badge:'new',  emoji:'&#x1F4BB;', isNew:true  },
+    { id:22, name:'MiniPhone Compact',       category:'Phones',      price:399,  oldPrice:449,  rating:4.0, badge:'sale', emoji:'&#x1F4F1;', isNew:false },
+    { id:23, name:'SpeakerBox 360',          category:'Audio',       price:179,  oldPrice:null, rating:4.3, badge:null,   emoji:'&#x1F4E2;', isNew:false },
+    { id:24, name:'TabMini 8',               category:'Tablets',     price:279,  oldPrice:329,  rating:4.1, badge:'sale', emoji:'&#x1F4F2;', isNew:false },
+    { id:25, name:'StreamDeck Mini',         category:'Accessories', price:79,   oldPrice:null, rating:4.7, badge:'hot',  emoji:'&#x1F39E;', isNew:false },
+    { id:26, name:'UltraBook 15 G2',         category:'Laptops',     price:1099, oldPrice:null, rating:4.4, badge:null,   emoji:'&#x1F4BB;', isNew:true  },
+    { id:27, name:'RunnerPhone Sport',       category:'Phones',      price:549,  oldPrice:null, rating:4.2, badge:'new',  emoji:'&#x1F4F1;', isNew:true  },
+    { id:28, name:'StudioMic USB',           category:'Audio',       price:99,   oldPrice:119,  rating:4.6, badge:'sale', emoji:'&#x1F3A4;', isNew:false },
+    { id:29, name:'PenStylus Pro',           category:'Accessories', price:69,   oldPrice:null, rating:4.5, badge:null,   emoji:'&#x270F;', isNew:false  },
+    { id:30, name:'GamingPhone Xtreme',      category:'Phones',      price:999,  oldPrice:null, rating:4.7, badge:'hot',  emoji:'&#x1F3AE;', isNew:true  },
+  ];
+
+  let cart = [];
+  let filteredProducts = [...PRODUCTS];
+
+  // ── Render ────────────────────────────────────────────────
+  function starsHtml(r) {
+    const full = Math.floor(r);
+    const half = r - full >= 0.5;
+    let s = '&#x2605;'.repeat(full);
+    if (half) s += '&#x00BD;';
+    return s;
+  }
+
+  function renderProducts(list) {
+    const grid = document.getElementById('product-grid');
+    const noRes = document.getElementById('no-results');
+    document.getElementById('result-count').textContent = list.length;
+
+    if (list.length === 0) {
+      grid.innerHTML = '';
+      noRes.style.display = 'block';
+      return;
+    }
+    noRes.style.display = 'none';
+
+    grid.innerHTML = list.map(p => {
+      const badgeHtml = p.badge
+        ? '<span class="product-badge badge-' + p.badge + '">' + p.badge.toUpperCase() + '</span>'
+        : '';
+      const oldPriceHtml = p.oldPrice
+        ? '<span class="product-price-old">$' + p.oldPrice + '</span>'
+        : '';
+      const inCart = cart.some(c => c.id === p.id);
+      return `
+        <article class="product-card" id="product-${p.id}" data-id="${p.id}" data-name="${p.name}" data-category="${p.category}" data-price="${p.price}" data-rating="${p.rating}">
+          ${badgeHtml}
+          <div class="product-image">${p.emoji}</div>
+          <div class="product-info">
+            <div class="product-category">${p.category}</div>
+            <div class="product-name">${p.name}</div>
+            <div class="product-rating">
+              <span class="product-stars">${starsHtml(p.rating)}</span>
+              <span class="product-rating-num">${p.rating}</span>
+            </div>
+            <div class="product-price-row">
+              <div>
+                <span class="product-price">$${p.price}</span>
+                ${oldPriceHtml}
+              </div>
+              <button class="add-to-cart ${inCart ? 'added' : ''}"
+                id="add-cart-${p.id}"
+                onclick="addToCart(event, ${p.id})"
+                title="${inCart ? 'In cart' : 'Add to cart'}">
+                ${inCart ? '&#x2713;' : '+'}
+              </button>
+            </div>
+          </div>
+        </article>`;
+    }).join('');
+  }
+
+  // ── Filtering ─────────────────────────────────────────────
+  function applyFilters() {
+    const query   = document.getElementById('search-input').value.trim().toLowerCase();
+    const cats    = [...document.querySelectorAll('input[name="category"]:checked')].map(c => c.value);
+    const minRaw  = document.getElementById('price-min').value;
+    const maxRaw  = document.getElementById('price-max').value;
+    const minPrice = minRaw !== '' ? Number(minRaw) : 0;
+    const maxPrice = maxRaw !== '' ? Number(maxRaw) : Infinity;
+    const minRating = parseFloat(document.querySelector('input[name="min-rating"]:checked')?.value || '0');
+    const sort    = document.getElementById('sort-select').value;
+
+    let list = PRODUCTS.filter(p => {
+      if (query && !p.name.toLowerCase().includes(query) && !p.category.toLowerCase().includes(query)) return false;
+      if (cats.length && !cats.includes(p.category)) return false;
+      if (p.price < minPrice || p.price > maxPrice) return false;
+      if (p.rating < minRating) return false;
+      return true;
+    });
+
+    if (sort === 'price-asc')  list.sort((a,b) => a.price - b.price);
+    if (sort === 'price-desc') list.sort((a,b) => b.price - a.price);
+    if (sort === 'rating')     list.sort((a,b) => b.rating - a.rating);
+    if (sort === 'newest')     list.sort((a,b) => (b.isNew ? 1 : 0) - (a.isNew ? 1 : 0));
+    if (sort === 'popular')    list.sort((a,b) => b.id - a.id); // proxy
+
+    filteredProducts = list;
+    renderProducts(list);
+    renderActiveTags(query, cats, minRaw, maxRaw, minRating, sort);
+  }
+
+  function renderActiveTags(q, cats, minP, maxP, minR, sort) {
+    const container = document.getElementById('active-filters');
+    let html = '';
+    if (q) html += tag('Search: "' + q + '"', 'clearSearch()');
+    cats.forEach(c => html += tag('Category: ' + c, 'clearCategory("' + c + '")'));
+    if (minP || maxP) html += tag('Price: $' + (minP||'0') + ' - $' + (maxP||'any'), 'clearFilter("price")');
+    if (minR > 0) html += tag('Rating: ' + minR + '+', 'clearFilter("rating")');
+    container.innerHTML = html;
+  }
+
+  function tag(label, action) {
+    return '<span class="filter-tag">' + label + '<span class="remove" onclick="' + action + '">&#x2715;</span></span>';
+  }
+
+  function clearSearch() {
+    document.getElementById('search-input').value = '';
+    applyFilters();
+  }
+
+  function clearCategory(val) {
+    document.querySelectorAll('input[name="category"]').forEach(el => {
+      if (el.value === val) el.checked = false;
+    });
+    applyFilters();
+  }
+
+  function clearFilter(type) {
+    if (type === 'price') {
+      document.getElementById('price-min').value = '';
+      document.getElementById('price-max').value = '';
+    }
+    if (type === 'rating') {
+      document.getElementById('rating-any').checked = true;
+    }
+    if (type === 'category') {
+      document.querySelectorAll('input[name="category"]').forEach(el => el.checked = false);
+    }
+    applyFilters();
+  }
+
+  function resetFilters() {
+    document.getElementById('search-input').value = '';
+    document.querySelectorAll('input[name="category"]').forEach(el => el.checked = false);
+    document.getElementById('price-min').value = '';
+    document.getElementById('price-max').value = '';
+    document.getElementById('rating-any').checked = true;
+    document.getElementById('sort-select').value = 'relevance';
+    applyFilters();
+  }
+
+  // ── Cart ─────────────────────────────────────────────────
+  function addToCart(evt, id) {
+    evt.stopPropagation();
+    const p = PRODUCTS.find(x => x.id === id);
+    if (!p) return;
+
+    const btn = document.getElementById('add-cart-' + id);
+    if (cart.some(c => c.id === id)) {
+      cart = cart.filter(c => c.id !== id);
+      btn.innerHTML = '+';
+      btn.classList.remove('added');
+      btn.title = 'Add to cart';
+    } else {
+      cart.push(p);
+      btn.innerHTML = '&#x2713;';
+      btn.classList.add('added');
+      btn.title = 'In cart';
+      showToast('Added: ' + p.name);
+    }
+    renderCart();
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('cart-toast');
+    t.textContent = '✓ ' + msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  function renderCart() {
+    const sec = document.getElementById('collected-section');
+    const tbody = document.getElementById('collected-tbody');
+    if (cart.length === 0) { sec.classList.remove('show'); return; }
+    sec.classList.add('show');
+    tbody.innerHTML = cart.map((p, i) => `
+      <tr id="cart-row-${p.id}">
+        <td>${i+1}</td>
+        <td>${p.name}</td>
+        <td>${p.category}</td>
+        <td class="td-price">$${p.price}</td>
+        <td class="td-rating">${p.rating} &#x2605;</td>
+      </tr>`).join('');
+  }
+
+  function clearCart() {
+    cart = [];
+    document.querySelectorAll('.add-to-cart.added').forEach(btn => {
+      btn.innerHTML = '+';
+      btn.classList.remove('added');
+      btn.title = 'Add to cart';
+    });
+    renderCart();
+  }
+
+  // ── Search on enter ───────────────────────────────────────
+  document.getElementById('search-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') applyFilters();
+  });
+
+  // ── Init ──────────────────────────────────────────────────
+  renderProducts(PRODUCTS);
+</script>
+
+<!-- Sahayak Extension Scripts (enables interactive agent scanning on practice page) -->
+<script src="../../lib/readability.js"></script>
+<script src="../../lib/readability-readerable.js"></script>
+<script src="../../content/extract.js"></script>
+<script src="../../content/scanner.js"></script>
+<script src="../../content/overlay.js"></script>
+<script src="../../content/execute.js"></script>
+<script src="../../content/index.js"></script>
+</body>
+</html>

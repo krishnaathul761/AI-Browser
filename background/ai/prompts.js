@@ -257,3 +257,119 @@ function buildVisionPrompt(question, language) {
     languageSuffix(language)
   );
 }
+
+/**
+ * Prompt to find a specific interactive element on the page based on user intent (Slice 3.2).
+ *
+ * @param {string} query - natural language question or target, e.g. "where is the email field?"
+ * @param {Array<Object>} elements - compact list of ActionElement
+ * @param {string} language - "en" | "hinglish"
+ * @returns {string} assembled prompt
+ */
+function buildFindElementPrompt(query, elements, language) {
+  const compactList = elements
+    .map((el) => {
+      let desc = `[${el.n}] <${el.tag}${el.type ? `:${el.type}` : ""}> "${el.text || ""}"`;
+      if (el.placeholder) desc += ` (placeholder: "${el.placeholder}")`;
+      if (el.name) desc += ` (name: "${el.name}")`;
+      if (el.id) desc += ` (id: "${el.id}")`;
+      return desc;
+    })
+    .join("\n");
+
+  return (
+    "You are an AI browser assistant. A user is looking for an interactive element on the current webpage.\n" +
+    "Below is the list of interactive elements found on the page in [number] format, followed by their tag, text label, and attributes.\n\n" +
+    "Interactive elements:\n" +
+    compactList +
+    "\n\n" +
+    'User query: "' +
+    query.trim() +
+    '"\n\n' +
+    "Analyze which numbered element best matches what the user is looking for.\n" +
+    "Return ONLY a valid JSON object matching this schema — no markdown fences, no explanation outside JSON:\n" +
+    "{\n" +
+    '  "n": <number of the best matching element, or null if no element matches>,\n' +
+    '  "reason": "<short 1-sentence explanation of why this element was selected>",\n' +
+    '  "confidence": "<\\"high\\" | \\"medium\\" | \\"low\\">"\n' +
+    "}\n\n" +
+    "Rules:\n" +
+    "- If multiple elements match, pick the most relevant one and explain in reason.\n" +
+    "- If unsure or the match is weak, set confidence to 'low'.\n" +
+    "- If no element matches the query at all, set n to null and confidence to 'low'.\n" +
+    "- DO NOT return any text other than the JSON object.\n\n" +
+    languageSuffix(language)
+  );
+}
+
+/**
+ * Agent step prompt — propose a single next action towards achieving the user's goal (Slice 3.3).
+ *
+ * @param {string} goal - overall user instruction e.g. "Fill internship form with Priya Sharma"
+ * @param {Array<Object>} history - list of previous actions taken
+ * @param {Array<Object>} elements - list of ActionElement from current page scan
+ * @param {string} language - "en" | "hinglish"
+ * @returns {string} assembled prompt
+ */
+function buildAgentStepPrompt(goal, history, elements, language) {
+  // Cap to 50 elements to keep prompt concise, responsive, and avoid TPM rate-limit delays
+  const subset = Array.isArray(elements) && elements.length > 50 ? elements.slice(0, 50) : (elements || []);
+
+  const compactElements = subset
+    .map((el) => {
+      let desc = `[${el.n}] <${el.tag}${el.type ? `:${el.type}` : ""}> "${el.text || ""}"`;
+      if (el.placeholder) desc += ` (placeholder: "${el.placeholder}")`;
+      if (el.name) desc += ` (name: "${el.name}")`;
+      if (el.id) desc += ` (id: "${el.id}")`;
+      if (el.checked !== undefined) desc += ` (checked: ${el.checked})`;
+      if (el.consequential) desc += " [CONSEQUENTIAL]";
+      if (el.sensitive) desc += " [SENSITIVE]";
+      return desc;
+    })
+    .join("\n");
+
+  const historyLines =
+    Array.isArray(history) && history.length > 0
+      ? history
+          .map((h, idx) => {
+            const act = h.proposal || h;
+            let line = `Step ${idx + 1}: ${act.action}`;
+            if (act.n) line += ` on [${act.n}]`;
+            if (act.value) line += ` value="${act.value}"`;
+            if (act.direction) line += ` direction="${act.direction}"`;
+            if (h.decision) line += ` (${h.decision})`;
+            return line;
+          })
+          .join("\n")
+      : "No previous actions yet (Step 1).";
+
+  return (
+    "You are Sahayak, an autonomous browser agent. You help users achieve goals by proposing ONE action at a time.\n" +
+    "Every step you propose requires human approval before execution.\n\n" +
+    'User Goal: "' +
+    goal.trim() +
+    '"\n\n' +
+    "Previous actions taken:\n" +
+    historyLines +
+    "\n\n" +
+    "Current page interactive elements:\n" +
+    compactElements +
+    "\n\n" +
+    "Instructions:\n" +
+    "1. Analyze the user's goal, the previous actions taken, and the current page elements.\n" +
+    "2. Determine the SINGLE best next action to make progress toward the goal.\n" +
+    "3. Supported actions:\n" +
+    '   - click:  { "action": "click", "n": <element number>, "reason": "<1-sentence reason>" }\n' +
+    '   - type:   { "action": "type", "n": <element number>, "value": "<text to type>", "reason": "<reason>" }\n' +
+    '   - select: { "action": "select", "n": <element number>, "value": "<option value or label>", "reason": "<reason>" }\n' +
+    '   - scroll: { "action": "scroll", "direction": "up" | "down", "reason": "<reason>" }\n' +
+    '   - done:   { "action": "done", "reason": "<explanation of how goal is completed>" }\n' +
+    "4. Safety Rules:\n" +
+    "   - NEVER propose typing into [SENSITIVE] elements (passwords, PINs, card numbers).\n" +
+    '   - If all steps are complete or the goal is achieved, return action "done".\n' +
+    "5. Return ONLY a single raw JSON object starting with { and ending with }. No markdown fences. No other text.\n\n" +
+    languageSuffix(language)
+  );
+}
+
+

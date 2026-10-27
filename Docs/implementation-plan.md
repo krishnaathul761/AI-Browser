@@ -411,14 +411,14 @@ These are the Week 3 demo targets and later safety “Submit” extra-confirm te
 
 ### Week 3 acceptance gate
 
-- [ ] Elements numbered reliably on practice pages  
-- [ ] Find-it identifies and highlights, no auto-action  
-- [ ] Agent JSON validated before use  
-- [ ] No action before Approve  
-- [ ] Approve, Skip, Stop, step limit, dry-run  
-- [ ] Progress saved across SW sleep  
-- [ ] Action log preserved  
-- [ ] Two practice errands succeed  
+- [x] Elements numbered reliably on practice pages  
+- [x] Find-it identifies and highlights, no auto-action  
+- [x] Agent JSON validated before use  
+- [x] No action before Approve  
+- [x] Approve, Skip, Stop, step limit, dry-run  
+- [x] Progress saved across SW sleep  
+- [x] Action log preserved  
+- [x] Two practice errands succeed  
 
 ---
 

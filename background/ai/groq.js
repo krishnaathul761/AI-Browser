@@ -58,14 +58,24 @@ async function generateContentGroq(prompt, apiKey, maxTokens) {
 
   const DELAYS  = [1000, 2000, 4000];
   const JITTER  = 200;
+  const REQUEST_TIMEOUT_MS = 25000;
   let lastErr   = null;
 
   for (let attempt = 0; attempt <= DELAYS.length; attempt++) {
     let response;
     try {
-      response = await fetch(GROQ_API_BASE, { method: "POST", headers, body });
+      response = await fetch(GROQ_API_BASE, {
+        method: "POST",
+        headers,
+        body,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
     } catch (networkErr) {
-      lastErr = groqError("NETWORK_ERROR", "Network request to Groq failed: " + (networkErr.message || "unknown"));
+      const isTimeout = networkErr.name === "TimeoutError" || networkErr.name === "AbortError";
+      const msg = isTimeout
+        ? "Request to Groq timed out after " + (REQUEST_TIMEOUT_MS / 1000) + "s."
+        : "Network request to Groq failed: " + (networkErr.message || "unknown");
+      lastErr = groqError("NETWORK_ERROR", msg);
       if (attempt < DELAYS.length) {
         await new Promise((r) => setTimeout(r, DELAYS[attempt] + (Math.random() * 2 - 1) * JITTER));
         continue;

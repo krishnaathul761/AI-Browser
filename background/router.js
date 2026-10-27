@@ -145,6 +145,48 @@ async function routeMessage(message, _sender) {
     case "SCREENSHOT_ASK":
       return handleScreenshotAsk(requestId, message);
 
+    case "SCAN_INTERACTIVE":
+      return handleScanInteractive(requestId, message);
+
+    case "BADGES_TOGGLE":
+      return handleBadgesToggle(requestId, message);
+
+    case "CLEAR_OVERLAYS":
+      return handleClearOverlays(requestId, message);
+
+    case "FIND_ELEMENT":
+      return handleFindElement(requestId, message);
+
+    case "HIGHLIGHT_ELEMENT":
+      return handleHighlightElement(requestId, message);
+
+    case "AGENT_START":
+      return handleAgentStart(requestId, message);
+
+    case "AGENT_APPROVE":
+      return handleAgentApprove(requestId);
+
+    case "AGENT_SKIP":
+      return handleAgentSkip(requestId);
+
+    case "AGENT_STOP":
+      return handleAgentStop(requestId);
+
+    case "AGENT_HISTORY_CLEAR":
+      return handleAgentHistoryClear(requestId);
+
+    case "AGENT_RESET":
+      return handleAgentReset(requestId);
+
+    case "AGENT_STATE_GET":
+      return ok(requestId, await getAgentState());
+
+    case "ACTION_LOG_GET":
+      return ok(requestId, await getActionLog());
+
+    case "ACTION_LOG_CLEAR":
+      return ok(requestId, await clearActionLog());
+
     default:
       return fail(requestId, "Unknown message type");
   }
@@ -245,9 +287,15 @@ async function resolveTabId(explicitTabId) {
   if (typeof explicitTabId === "number") {
     return explicitTabId;
   }
+  if (typeof explicitTabId === "string" && !isNaN(Number(explicitTabId))) {
+    return Number(explicitTabId);
+  }
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    return (tab && tab.id) || null;
+    if (tab && tab.id) return tab.id;
+    const [lastTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (lastTab && lastTab.id) return lastTab.id;
+    return null;
   } catch (_err) {
     return null;
   }
@@ -422,6 +470,7 @@ function parseSummaryJson(raw) {
  */
 function isRestrictedUrl(url) {
   if (!url) return false;
+  if (url.includes("/pages/practice/")) return false;
   return (
     url.startsWith("chrome://") ||
     url.startsWith("chrome-extension://") ||
@@ -1071,3 +1120,319 @@ async function handleContextMenuGet(requestId) {
     return ok(requestId, { pending: null });
   }
 }
+
+// ── SCAN_INTERACTIVE (Slice 3.1) ──────────────────────────────────────────────
+
+/**
+ * Request the content script to scan interactive elements in the active tab
+ * and optionally show badges.
+ *
+ * Payload shape: { tabId?: number, showBadges?: boolean }
+ *
+ * Success data: { elements: ActionElement[], count: number, url: string, title: string }
+ */
+async function handleScanInteractive(requestId, message) {
+  const payload = message && message.payload;
+  const tabId = await resolveTabId(payload && payload.tabId);
+  if (tabId === null) {
+    return fail(requestId, "No active tab found.");
+  }
+
+  let tabUrl = "";
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    tabUrl = (tab && tab.url) || "";
+  } catch (_e) {}
+
+  if (isRestrictedUrl(tabUrl)) {
+    return fail(requestId, "RESTRICTED_PAGE");
+  }
+
+  try {
+    const reply = await chrome.tabs.sendMessage(tabId, {
+      type: "SCAN_INTERACTIVE",
+      requestId: uuid(),
+      payload: {
+        showBadges: payload ? payload.showBadges !== false : true,
+      },
+    });
+
+    if (!reply || !reply.ok) {
+      return fail(requestId, (reply && reply.error) || "Could not scan interactive elements.");
+    }
+
+    return ok(requestId, reply.data);
+  } catch (err) {
+    return fail(requestId, "Could not talk to the page content script. Please refresh the tab and try again.");
+  }
+}
+
+// ── BADGES_TOGGLE ─────────────────────────────────────────────────────────────
+
+async function handleBadgesToggle(requestId, message) {
+  const payload = message && message.payload;
+  const tabId = await resolveTabId(payload && payload.tabId);
+  if (tabId === null) {
+    return fail(requestId, "No active tab found.");
+  }
+
+  try {
+    const reply = await chrome.tabs.sendMessage(tabId, {
+      type: "BADGES_TOGGLE",
+      requestId: uuid(),
+      payload,
+    });
+    if (!reply || !reply.ok) {
+      return fail(requestId, (reply && reply.error) || "Could not toggle badges.");
+    }
+    return ok(requestId, reply.data);
+  } catch (err) {
+    return fail(requestId, "Could not talk to page. Please refresh the tab.");
+  }
+}
+
+// ── CLEAR_OVERLAYS ────────────────────────────────────────────────────────────
+
+async function handleClearOverlays(requestId, message) {
+  const payload = message && message.payload;
+  const tabId = await resolveTabId(payload && payload.tabId);
+  if (tabId === null) {
+    return fail(requestId, "No active tab found.");
+  }
+
+  try {
+    const reply = await chrome.tabs.sendMessage(tabId, {
+      type: "CLEAR_OVERLAYS",
+      requestId: uuid(),
+      payload,
+    });
+    if (!reply || !reply.ok) {
+      return fail(requestId, (reply && reply.error) || "Could not clear overlays.");
+    }
+    return ok(requestId, reply.data);
+  } catch (err) {
+    return fail(requestId, "Could not talk to page.");
+  }
+}
+
+// ── FIND_ELEMENT (Slice 3.2) ──────────────────────────────────────────────────
+
+/**
+ * Natural-language element search:
+ * Scans page elements, asks Gemini Flash-Lite to pick the matching [n],
+ * validates structured JSON schema, and highlights the element in the page.
+ *
+ * NOTE: Strictly highlights only. Never clicks or triggers DOM actions.
+ *
+ * Payload shape: { query: string, tabId?: number }
+ *
+ * Success data:
+ *   {
+ *     n: number | null,
+ *     reason: string,
+ *     confidence: "high" | "medium" | "low",
+ *     element: ActionElement | null,
+ *     totalScanned: number
+ *   }
+ */
+async function handleFindElement(requestId, message) {
+  const payload = message && message.payload;
+  const query   = payload && payload.query;
+
+  if (!query || !query.trim()) {
+    return fail(requestId, "Please describe the element you are looking for.");
+  }
+
+  const tabId = await resolveTabId(payload && payload.tabId);
+  if (tabId === null) {
+    return fail(requestId, "No active tab found.");
+  }
+
+  let tabUrl = "";
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    tabUrl = (tab && tab.url) || "";
+  } catch (_e) {}
+
+  if (isRestrictedUrl(tabUrl)) {
+    return fail(requestId, "RESTRICTED_PAGE");
+  }
+
+  const settings = await readSettings();
+  if (!settings.geminiApiKey && !settings.groqApiKey) {
+    return fail(requestId, "MISSING_KEY");
+  }
+
+  // 1. Scan interactive elements with badges visible so the user sees the numbers
+  let scanReply;
+  try {
+    scanReply = await chrome.tabs.sendMessage(tabId, {
+      type: "SCAN_INTERACTIVE",
+      requestId: uuid(),
+      payload: { showBadges: true },
+    });
+  } catch (err) {
+    return fail(requestId, "Could not scan the page. Please refresh the tab and try again.");
+  }
+
+  if (!scanReply || !scanReply.ok || !scanReply.data || !Array.isArray(scanReply.data.elements)) {
+    return fail(requestId, "Could not scan interactive elements on the page.");
+  }
+
+  const elements = scanReply.data.elements;
+  if (elements.length === 0) {
+    return fail(requestId, "No interactive elements found on this page.");
+  }
+
+  // 2. Build prompt and query AI
+  const prompt = buildFindElementPrompt(query.trim(), elements, settings.language);
+
+  let rawResponse;
+  try {
+    rawResponse = await callAI({
+      model: GEMINI_FLASH_LITE,
+      prompt,
+      settings,
+      maxTokens: 300,
+    });
+  } catch (err) {
+    return fail(requestId, geminiErrorMessage(err));
+  }
+
+  // 3. Validate JSON schema
+  const validNumbers = elements.map((e) => e.n);
+  let validation = validateFindElementResult(rawResponse, validNumbers);
+
+  // If first attempt was malformed, retry once with an emphatic JSON-only instruction
+  if (!validation.ok) {
+    try {
+      const retryPrompt = prompt + "\n\nCRITICAL: Return ONLY valid JSON with keys: n, reason, confidence. No other text.";
+      const retryRaw = await callAI({
+        model: GEMINI_FLASH_LITE,
+        prompt: retryPrompt,
+        settings,
+        maxTokens: 300,
+      });
+      validation = validateFindElementResult(retryRaw, validNumbers);
+    } catch (_retryErr) {}
+  }
+
+  if (!validation.ok) {
+    return fail(requestId, "Could not parse element selection. Please try rephrasing your question.");
+  }
+
+  const { n, reason, confidence } = validation.data;
+
+  // 4. If an element was found, trigger highlight in the content script (NO CLICK)
+  let targetElement = null;
+  if (n !== null) {
+    targetElement = elements.find((e) => e.n === n) || null;
+    try {
+      await chrome.tabs.sendMessage(tabId, {
+        type: "HIGHLIGHT_ELEMENT",
+        requestId: uuid(),
+        payload: { n },
+      });
+    } catch (_err) {}
+  }
+
+  return ok(requestId, {
+    n,
+    reason,
+    confidence,
+    element: targetElement,
+    totalScanned: elements.length,
+  });
+}
+
+// ── HIGHLIGHT_ELEMENT (Slice 3.2) ─────────────────────────────────────────────
+
+async function handleHighlightElement(requestId, message) {
+  const payload = message && message.payload;
+  const n = payload && payload.n;
+  const tabId = await resolveTabId(payload && payload.tabId);
+  if (tabId === null) return fail(requestId, "No active tab found.");
+
+  try {
+    const reply = await chrome.tabs.sendMessage(tabId, {
+      type: "HIGHLIGHT_ELEMENT",
+      requestId: uuid(),
+      payload: { n },
+    });
+    if (!reply || !reply.ok) {
+      return fail(requestId, (reply && reply.error) || "Could not highlight element.");
+    }
+    return ok(requestId, reply.data);
+  } catch (err) {
+    return fail(requestId, "Could not talk to the page content script.");
+  }
+}
+
+// ── AGENT LOOP (Slice 3.3) ───────────────────────────────────────────────────
+
+async function handleAgentStart(requestId, message) {
+  const payload = message && message.payload;
+  const goal = payload && payload.goal;
+  const tabId = payload && payload.tabId;
+  const maxSteps = payload && payload.maxSteps;
+  const dryRun = payload && payload.dryRun;
+
+  try {
+    const session = await agentStart(goal, tabId, maxSteps, dryRun);
+    if (session && session.status === "error") {
+      return fail(requestId, session.lastError || "Failed to start agent task.");
+    }
+    return ok(requestId, session);
+  } catch (err) {
+    return fail(requestId, err.message || "Failed to start agent task.");
+  }
+}
+
+async function handleAgentApprove(requestId) {
+  try {
+    const session = await agentApprove();
+    return ok(requestId, session);
+  } catch (err) {
+    return fail(requestId, err.message || "Failed to approve agent action.");
+  }
+}
+
+async function handleAgentSkip(requestId) {
+  try {
+    const session = await agentSkip();
+    return ok(requestId, session);
+  } catch (err) {
+    return fail(requestId, err.message || "Failed to skip agent action.");
+  }
+}
+
+async function handleAgentStop(requestId) {
+  try {
+    const session = await agentStop();
+    return ok(requestId, session);
+  } catch (err) {
+    return fail(requestId, err.message || "Failed to stop agent task.");
+  }
+}
+
+async function handleAgentHistoryClear(requestId) {
+  try {
+    const session = await agentHistoryClear();
+    return ok(requestId, session);
+  } catch (err) {
+    return fail(requestId, err.message || "Failed to clear errand history.");
+  }
+}
+
+async function handleAgentReset(requestId) {
+  try {
+    const session = await agentReset();
+    return ok(requestId, session);
+  } catch (err) {
+    return fail(requestId, err.message || "Failed to reset agent task.");
+  }
+}
+
+
+
+

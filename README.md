@@ -4,7 +4,7 @@ Sahayak is a Chrome extension (Manifest V3) that lives in the browser's side pan
 
 ---
 
-## What's built (Phase 1 + Phase 2 — Weeks 1 & 2)
+## What's built (Phases 1, 2, & 3 — Weeks 1, 2, & 3)
 
 | Feature | Status |
 |---|---|
@@ -28,6 +28,17 @@ Sahayak is a Chrome extension (Manifest V3) that lives in the browser's side pan
 | Screenshot Q&A via Gemini Flash vision | ✅ |
 | Dark mode (system default + manual toggle) | ✅ |
 | Summary cache always stored in English | ✅ |
+| Interactive element scanner with numbered shadow-DOM badges | ✅ |
+| "Find it for me" element identification + pulse highlight | ✅ |
+| Strict schema validation, alias normalization & fence stripping | ✅ |
+| Human-in-the-loop agent loop (zero action without explicit Approve) | ✅ |
+| Step controls: Approve, Skip, Stop, max step limit | ✅ |
+| Dry-run simulation mode (highlights target without mutating DOM) | ✅ |
+| Session persistence across service worker sleep & termination | ✅ |
+| Persistent action log (capped at 200 items in `chrome.storage.local`) | ✅ |
+| Clear errand steps history & session reset | ✅ |
+| Strict safety refusal on sensitive fields (passwords, PINs, card info) | ✅ |
+| Practice pages & automated Acceptance Gate test suite | ✅ |
 
 ---
 
@@ -37,7 +48,7 @@ Sahayak is a Chrome extension (Manifest V3) that lives in the browser's side pan
 |---|---|---|
 | **1 ✅** | The Eyes | Shell, summarise, explain, YouTube, language toggle |
 | **2 ✅** | The Brain | Page chat, context menus, screenshot Q&A, rate-limit resilience, UI polish |
-| **3** | The Hands | Element scanner, find-it, approval-based agent loop, action log |
+| **3 ✅** | The Hands | Element scanner, find-it, approval-based agent loop, dry-run, action log, practice pages |
 | **4** | Ship | Profile memory, skills import/export, safety rails, release ZIP |
 
 ---
@@ -140,22 +151,34 @@ AI-Browser/
 ├── background/
 │   ├── service-worker.js    # Event wiring, context menus
 │   ├── router.js            # Message router + all handlers
-│   └── ai/
-│       ├── gemini.js        # Gemini API client (text, video, vision) + retry/backoff
-│       ├── groq.js          # Groq API client + retry/backoff
-│       ├── ai.js            # Unified dispatcher + Gemini-first fallback logic
-│       ├── prompts.js       # Prompt templates + model IDs
-│       └── cache.js         # Summary cache (chrome.storage.local, 24h TTL)
+│   ├── ai/
+│   │   ├── gemini.js        # Gemini API client (text, video, vision) + retry/backoff
+│   │   ├── groq.js          # Groq API client + retry/backoff
+│   │   ├── ai.js            # Unified dispatcher + Gemini-first fallback logic
+│   │   ├── prompts.js       # Prompt templates + model IDs
+│   │   └── cache.js         # Summary cache (chrome.storage.local, 24h TTL)
+│   └── agent/
+│       ├── loop.js          # Human-in-the-loop agent step loop & dry-run
+│       ├── schema.js        # Strict JSON schema validation & alias normalization
+│       └── persist.js       # Session persistence & capped 200 action log
 ├── content/
 │   ├── extract.js           # Readability wrapper + DOM helpers
+│   ├── scanner.js           # Interactive element scanner & numbering
+│   ├── overlay.js           # Shadow-DOM numbered badges & element pulse
+│   ├── execute.js           # DOM action executor with safety guards
 │   └── index.js             # Content script message listener
+├── pages/
+│   └── practice/
+│       ├── internship-form.html # Multi-step practice form errand
+│       ├── shop.html            # Practice e-commerce search & filter errand
+│       └── acceptance-gate.html # Interactive unit & contract test suite
 ├── lib/
 │   ├── readability.js       # Vendored Mozilla Readability
 │   ├── readability-readerable.js
-│   └── utils.js             # uuid(), envelope()
+│   └── utils.js             # uuid(), envelope(), safe JSON
 ├── sidepanel/
-│   ├── index.html
-│   ├── panel.js             # All panel UI logic
+│   ├── index.html           # Sidepanel tabs: Summarise, Chat, Agent
+│   ├── panel.js             # Panel UI logic, errand approval, history
 │   └── styles.css           # Light + dark mode styles
 ├── options/
 │   ├── index.html           # Settings page
@@ -170,13 +193,14 @@ AI-Browser/
 
 ---
 
-## Safety
+## Safety & Human-in-the-Loop Architecture
 
-- API keys live in `chrome.storage.local` only — never in source, never in prompts
-- All AI fetch calls run from the service worker, not the page
-- Restricted pages (`chrome://`, Web Store) are blocked from extraction and AI calls
-- Vision calls never fall back to Groq — image data never leaves Gemini
-- Phase 3 will add full safety rails: payment page blocks, password/OTP field protection, extra confirmation on consequential actions
+- **Approval-first**: Every DOM interaction (click, type, select) MUST be explicitly approved by the human user. No action executes autonomously.
+- **Dry-run mode**: Simulate errands with highlighting only — zero DOM changes.
+- **Sensitive field protection**: Passwords, OTPs, PINs, card numbers, and CVVs are strictly forbidden from automated typing (`SAFETY_REFUSAL`).
+- **Restricted pages**: `chrome://`, Chrome Web Store, payment endpoints, and banking URLs block agent automation.
+- **Local storage**: API keys and logs live in `chrome.storage.local` on-device only.
+- **Service worker resilience**: Errand state survives service worker sleep and wakes seamlessly upon panel reopen.
 
 ---
 

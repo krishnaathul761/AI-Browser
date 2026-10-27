@@ -26,3 +26,8 @@ desktop.ini
 .idea/
 .vscode/
 *.log
+
+# Local study & candidate audit resources (not part of core extension project)
+BENCHMARK_RESULTS.md
+RESUME_EVIDENCE_REPORT.md
+

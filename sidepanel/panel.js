@@ -1,11 +1,15 @@
 const bannerEl = document.getElementById("banner");
 const settingsBtn = document.getElementById("open-settings");
+const settingsBackBtn = document.getElementById("settings-back-btn");
 const langButtons = document.querySelectorAll(".lang-btn");
 const tabButtons = document.querySelectorAll(".tab");
 const summariseBtn = document.getElementById("summarise-btn");
 const summaryArea = document.getElementById("summary-area");
 const explainBtn = document.getElementById("explain-btn");
 const resultArea = document.getElementById("result-area");
+
+let currentTab = "summarise";
+let isSettingsOpen = false;
 
 // ── Last-action state (used to re-run on language toggle) ─────────────────────
 //
@@ -20,6 +24,7 @@ const resultArea = document.getElementById("result-area");
 // originalData is always the English source — we always translate FROM that,
 // never from a previously-translated version, so EN→Hinglish→EN round-trips
 // correctly.
+//
 //
 let lastAction = null;
 
@@ -49,12 +54,71 @@ function showBanner(message, kind) {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
+/**
+ * Switch to the in-panel Settings view, replacing the default panel.
+ */
 function openSettings() {
-  if (globalThis.chrome && chrome.runtime && chrome.runtime.openOptionsPage) {
-    chrome.runtime.openOptionsPage();
-    return;
+  if (isSettingsOpen) return;
+  isSettingsOpen = true;
+  document.body.classList.add("is-settings-open");
+  if (settingsBtn) {
+    settingsBtn.classList.add("is-active");
+    settingsBtn.setAttribute("aria-label", "Back to panel");
+    settingsBtn.title = "Back to panel";
   }
-  showBanner("Open Sahayak as a Chrome extension to use Settings.");
+  document.querySelectorAll(".view").forEach((view) => {
+    view.hidden = view.getAttribute("data-view") !== "settings";
+  });
+  loadInPanelSettings().catch(() => {});
+}
+
+/**
+ * Navigate back from Settings to Sahayak's default/current panel.
+ */
+function closeSettings() {
+  if (!isSettingsOpen) return;
+  isSettingsOpen = false;
+  document.body.classList.remove("is-settings-open");
+  if (settingsBtn) {
+    settingsBtn.classList.remove("is-active");
+    settingsBtn.setAttribute("aria-label", "Settings");
+    settingsBtn.title = "Settings";
+  }
+  switchToTab(currentTab || "summarise");
+}
+
+/**
+ * Toggle settings: opens settings if closed, returns to default panel if open.
+ */
+function toggleSettings() {
+  if (isSettingsOpen) {
+    closeSettings();
+  } else {
+    openSettings();
+  }
+}
+
+/** Switch every tab button + view to the given tab name. */
+function switchToTab(tabName) {
+  if (tabName !== "settings") {
+    currentTab = tabName;
+  }
+  tabButtons.forEach((b) => {
+    b.classList.toggle("is-active", b.getAttribute("data-tab") === tabName);
+  });
+  document.querySelectorAll(".view").forEach((view) => {
+    view.hidden = view.getAttribute("data-view") !== tabName;
+  });
+}
+
+// Wire gear icon button to toggle
+if (settingsBtn) {
+  settingsBtn.addEventListener("click", toggleSettings);
+}
+
+// Wire back button inside settings header
+if (settingsBackBtn) {
+  settingsBackBtn.addEventListener("click", closeSettings);
 }
 
 // ── Messaging ─────────────────────────────────────────────────────────────────
@@ -208,14 +272,157 @@ tabButtons.forEach((btn) => {
   if (btn.disabled) return;
   btn.addEventListener("click", () => {
     const target = btn.getAttribute("data-tab");
-    tabButtons.forEach((b) => b.classList.toggle("is-active", b.getAttribute("data-tab") === target));
-    document.querySelectorAll(".view").forEach((view) => {
-      view.hidden = view.getAttribute("data-view") !== target;
-    });
     // Clear last action when switching tabs — result belongs to the previous tab.
     lastAction = null;
+    if (isSettingsOpen) {
+      closeSettings();
+    }
+    switchToTab(target);
+    if (target === "agent") {
+      syncAgentState().catch(() => {});
+    }
   });
 });
+
+// ── In-panel Settings logic ───────────────────────────────────────────────────
+
+const sGeminiInput    = document.getElementById("s-gemini-key");
+const sGeminiHint     = document.getElementById("s-key-hint");
+const sClearGemini    = document.getElementById("s-clear-gemini");
+const sGroqInput      = document.getElementById("s-groq-key");
+const sGroqHint       = document.getElementById("s-groq-hint");
+const sClearGroq      = document.getElementById("s-clear-groq");
+const sTranslate      = document.getElementById("s-translate-target");
+const sStatusEl       = document.getElementById("settings-status");
+const sProviderStatus = document.getElementById("s-provider-status");
+const sForm           = document.getElementById("settings-form");
+
+function setSettingsStatus(message, kind) {
+  if (!sStatusEl) return;
+  if (!message) { sStatusEl.hidden = true; sStatusEl.textContent = ""; return; }
+  sStatusEl.hidden = false;
+  sStatusEl.textContent = message;
+  sStatusEl.className = "settings-status" + (kind === "ok" ? " is-ok" : "");
+  if (kind === "ok") setTimeout(() => setSettingsStatus(""), 2500);
+}
+
+function updateInPanelProviderStatus(settings) {
+  if (!sProviderStatus) return;
+  const hasGemini = Boolean(settings.geminiApiKey);
+  const hasGroq   = Boolean(settings.groqApiKey);
+  const provider  = settings.preferredProvider || "auto";
+  let text = ""; let warn = false;
+  if (!hasGemini && !hasGroq) {
+    text = "No keys saved — AI features are disabled."; warn = true;
+  } else if (provider === "auto") {
+    text = hasGemini && hasGroq
+      ? "Gemini primary · Groq ready as fallback"
+      : hasGemini ? "Gemini active · Add Groq key for rate-limit fallback"
+                  : "Groq active (only key saved) · Add Gemini for YouTube & vision";
+  } else if (provider === "gemini") {
+    text = hasGemini ? "Gemini only mode active" : "Gemini selected but no key saved"; warn = !hasGemini;
+  } else if (provider === "groq") {
+    text = hasGroq ? "Groq only mode active (text tasks only)" : "Groq selected but no key saved"; warn = !hasGroq;
+  }
+  sProviderStatus.hidden = !text;
+  sProviderStatus.textContent = text;
+  sProviderStatus.className = "settings-provider-status" + (warn ? " settings-provider-status--warn" : "");
+}
+
+function applyInPanelSettings(settings) {
+  if (!sGeminiInput) return;
+  sGeminiInput.value = "";
+  sGeminiInput.placeholder = settings.geminiApiKey ? "Key saved — paste to replace" : "Paste key, then Save";
+  if (sGeminiHint) sGeminiHint.textContent = settings.geminiApiKey
+    ? "Key saved. Leave blank to keep it."
+    : "Google AI Studio · free tier available";
+  if (sClearGemini) sClearGemini.hidden = !settings.geminiApiKey;
+
+  if (sGroqInput) {
+    sGroqInput.value = "";
+    sGroqInput.placeholder = settings.groqApiKey ? "Key saved — paste to replace" : "Paste key, then Save";
+  }
+  if (sGroqHint) sGroqHint.textContent = settings.groqApiKey
+    ? "Key saved. Leave blank to keep it."
+    : "console.groq.com · free tier available";
+  if (sClearGroq) sClearGroq.hidden = !settings.groqApiKey;
+
+  const provider = settings.preferredProvider || "auto";
+  const providerRadio = sForm && sForm.querySelector('input[name="s-provider"][value="' + provider + '"]');
+  if (providerRadio) providerRadio.checked = true;
+
+  const lang = settings.language === "hinglish" ? "hinglish" : "en";
+  const langRadio = sForm && sForm.querySelector('input[name="s-language"][value="' + lang + '"]');
+  if (langRadio) langRadio.checked = true;
+
+  if (sTranslate && settings.translateTarget) sTranslate.value = settings.translateTarget;
+
+  updateInPanelProviderStatus(settings);
+}
+
+async function loadInPanelSettings() {
+  try {
+    const s = await send("SETTINGS_GET");
+    applyInPanelSettings(s);
+  } catch (err) {
+    setSettingsStatus(err.message || "Could not load settings.");
+  }
+}
+
+// Live provider status preview while choosing radio
+if (sForm) {
+  sForm.querySelectorAll('input[name="s-provider"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      send("SETTINGS_GET").then((s) => {
+        updateInPanelProviderStatus(Object.assign({}, s, { preferredProvider: radio.value }));
+      }).catch(() => {});
+    });
+  });
+}
+
+// Clear key buttons
+async function clearSettingsKey(keyName) {
+  try {
+    const patch = {}; patch[keyName] = "";
+    const saved = await send("SETTINGS_SET", patch);
+    applyInPanelSettings(saved);
+    setSettingsStatus("Key cleared.", "ok");
+  } catch (err) {
+    setSettingsStatus(err.message || "Could not clear key.");
+  }
+}
+
+if (sClearGemini) sClearGemini.addEventListener("click", () => clearSettingsKey("geminiApiKey"));
+if (sClearGroq)   sClearGroq.addEventListener("click",   () => clearSettingsKey("groqApiKey"));
+
+// Save
+if (sForm) {
+  sForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const langInput     = sForm.querySelector('input[name="s-language"]:checked');
+      const providerInput = sForm.querySelector('input[name="s-provider"]:checked');
+      const patch = {
+        language:          langInput     ? langInput.value     : "en",
+        preferredProvider: providerInput ? providerInput.value : "auto",
+        translateTarget:   sTranslate   ? sTranslate.value    : "hi",
+      };
+      const newGemini = sGeminiInput ? sGeminiInput.value.trim() : "";
+      if (newGemini) patch.geminiApiKey = newGemini;
+      const newGroq = sGroqInput ? sGroqInput.value.trim() : "";
+      if (newGroq) patch.groqApiKey = newGroq;
+
+      const saved = await send("SETTINGS_SET", patch);
+      applyInPanelSettings(saved);
+      // Keep the topbar language toggle in sync.
+      applyLanguage(saved.language || "en");
+      setSettingsStatus("Settings saved.", "ok");
+    } catch (err) {
+      setSettingsStatus(err.message || "Could not save settings.");
+    }
+  });
+}
+
 
 // ── Result area ───────────────────────────────────────────────────────────────
 
@@ -1216,11 +1423,294 @@ async function loadSettings() {
     showBanner("");
   }
 
+  // Dry run default
+  if (agentDryRunCheckbox && settings.dryRunDefault !== undefined) {
+    agentDryRunCheckbox.checked = Boolean(settings.dryRunDefault);
+  }
+
   // Check if the panel was opened via right-click context menu.
   checkAndRunPendingAction();
 }
 
-settingsBtn.addEventListener("click", openSettings);
+// ── Agent view (Slice 3.1 & 3.2) ──────────────────────────────────────────────
+
+const agentFindInput       = document.getElementById("agent-find-input");
+const agentFindBtn         = document.getElementById("agent-find-btn");
+const agentFindResult      = document.getElementById("agent-find-result");
+const agentFindNum         = document.getElementById("agent-find-num");
+const agentFindLabel       = document.getElementById("agent-find-label");
+const agentFindConfidence  = document.getElementById("agent-find-confidence");
+const agentFindReason      = document.getElementById("agent-find-reason");
+const agentFindWarning     = document.getElementById("agent-find-warning");
+const agentRehighlightBtn  = document.getElementById("agent-rehighlight-btn");
+
+const agentScanBtn         = document.getElementById("agent-scan-btn");
+const agentControlsRow     = document.getElementById("agent-controls-row");
+const agentToggleBadgesBtn = document.getElementById("agent-toggle-badges-btn");
+const agentClearBadgesBtn  = document.getElementById("agent-clear-badges-btn");
+const agentStatusEl        = document.getElementById("agent-status");
+const agentElementsContainer = document.getElementById("agent-elements-container");
+const agentElementsCount   = document.getElementById("agent-elements-count");
+const agentElementsList    = document.getElementById("agent-elements-list");
+
+let scannedElementsCache = [];
+let badgesVisible = false;
+let lastFoundElement = null;
+
+function setAgentStatus(message, kind) {
+  if (!agentStatusEl) return;
+  if (!message) {
+    agentStatusEl.hidden = true;
+    agentStatusEl.textContent = "";
+    return;
+  }
+  agentStatusEl.hidden = false;
+  agentStatusEl.textContent = message;
+  agentStatusEl.className = "agent-status" + (kind === "warn" ? " agent-status--warn" : "");
+}
+
+function renderAgentElementsList(elements) {
+  if (!agentElementsList || !agentElementsContainer) return;
+  agentElementsList.innerHTML = "";
+
+  if (!elements || elements.length === 0) {
+    agentElementsContainer.hidden = true;
+    return;
+  }
+
+  agentElementsContainer.hidden = false;
+  if (agentElementsCount) {
+    agentElementsCount.textContent = String(elements.length);
+  }
+
+  elements.forEach((item) => {
+    const card = document.createElement("div");
+    card.className = "agent-element-card";
+    card.setAttribute("data-n", String(item.n));
+
+    // Number badge
+    const numEl = document.createElement("div");
+    numEl.className = "agent-element-num";
+    if (item.consequential) numEl.classList.add("agent-element-num--consequential");
+    if (item.sensitive) numEl.classList.add("agent-element-num--sensitive");
+    numEl.textContent = String(item.n);
+
+    // Info
+    const infoEl = document.createElement("div");
+    infoEl.className = "agent-element-info";
+
+    const labelEl = document.createElement("div");
+    labelEl.className = "agent-element-label";
+    labelEl.textContent = item.text || (item.tag + (item.type ? `:${item.type}` : ""));
+
+    const metaEl = document.createElement("div");
+    metaEl.className = "agent-element-meta";
+
+    const tagBadge = document.createElement("span");
+    tagBadge.className = "agent-tag-badge";
+    tagBadge.textContent = `<${item.tag}${item.type ? ` type="${item.type}"` : ""}>`;
+    metaEl.appendChild(tagBadge);
+
+    if (item.consequential) {
+      const pill = document.createElement("span");
+      pill.className = "agent-pill agent-pill--consequential";
+      pill.textContent = "consequential";
+      metaEl.appendChild(pill);
+    }
+
+    if (item.sensitive) {
+      const pill = document.createElement("span");
+      pill.className = "agent-pill agent-pill--sensitive";
+      pill.textContent = "sensitive";
+      metaEl.appendChild(pill);
+    }
+
+    infoEl.appendChild(labelEl);
+    infoEl.appendChild(metaEl);
+
+    card.appendChild(numEl);
+    card.appendChild(infoEl);
+
+    // Click on card to highlight on page
+    card.addEventListener("click", async () => {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab && tab.id) {
+          await chrome.tabs.sendMessage(tab.id, {
+            type: "HIGHLIGHT_ELEMENT",
+            requestId: uuid(),
+            payload: { n: item.n },
+          });
+        }
+      } catch (_e) {}
+    });
+
+    agentElementsList.appendChild(card);
+  });
+}
+
+async function runAgentScan() {
+  if (!agentScanBtn) return;
+  agentScanBtn.disabled = true;
+  const prevText = agentScanBtn.textContent;
+  agentScanBtn.textContent = "Scanning page…";
+  setAgentStatus("");
+
+  try {
+    const data = await send("SCAN_INTERACTIVE", { showBadges: true });
+    badgesVisible = true;
+    scannedElementsCache = data.elements || [];
+
+    if (agentControlsRow) agentControlsRow.hidden = false;
+    if (agentToggleBadgesBtn) agentToggleBadgesBtn.textContent = "Hide badges";
+
+    const count = data.count || 0;
+    const consequentialCount = scannedElementsCache.filter((e) => e.consequential).length;
+    const sensitiveCount = scannedElementsCache.filter((e) => e.sensitive).length;
+
+    let statusText = `Found ${count} interactive element${count === 1 ? "" : "s"}.`;
+    if (consequentialCount > 0 || sensitiveCount > 0) {
+      const parts = [];
+      if (consequentialCount > 0) parts.push(`${consequentialCount} consequential`);
+      if (sensitiveCount > 0) parts.push(`${sensitiveCount} sensitive`);
+      statusText += ` (${parts.join(", ")})`;
+    }
+
+    setAgentStatus(statusText);
+    renderAgentElementsList(scannedElementsCache);
+  } catch (err) {
+    setAgentStatus(err.message || "Could not scan interactive elements.", "warn");
+  } finally {
+    agentScanBtn.disabled = false;
+    agentScanBtn.textContent = prevText;
+  }
+}
+
+if (agentScanBtn) {
+  agentScanBtn.addEventListener("click", runAgentScan);
+}
+
+if (agentToggleBadgesBtn) {
+  agentToggleBadgesBtn.addEventListener("click", async () => {
+    try {
+      const data = await send("BADGES_TOGGLE", {});
+      badgesVisible = Boolean(data && data.visible);
+      agentToggleBadgesBtn.textContent = badgesVisible ? "Hide badges" : "Show badges";
+    } catch (err) {
+      setAgentStatus(err.message || "Could not toggle badges.", "warn");
+    }
+  });
+}
+
+if (agentClearBadgesBtn) {
+  agentClearBadgesBtn.addEventListener("click", async () => {
+    try {
+      await send("CLEAR_OVERLAYS", {});
+      badgesVisible = false;
+      scannedElementsCache = [];
+      lastFoundElement = null;
+      if (agentControlsRow) agentControlsRow.hidden = true;
+      if (agentElementsContainer) agentElementsContainer.hidden = true;
+      if (agentFindResult) agentFindResult.hidden = true;
+      setAgentStatus("Badges cleared.");
+      setTimeout(() => setAgentStatus(""), 2000);
+    } catch (err) {
+      setAgentStatus(err.message || "Could not clear badges.", "warn");
+    }
+  });
+}
+
+// ── Find it for me (Slice 3.2) ────────────────────────────────────────────────
+
+async function runFindElement() {
+  if (!agentFindInput || !agentFindBtn) return;
+  const query = agentFindInput.value.trim();
+  if (!query) {
+    setAgentStatus("Please type what you are looking for.", "warn");
+    agentFindInput.focus();
+    return;
+  }
+
+  agentFindBtn.disabled = true;
+  const prevBtnText = agentFindBtn.textContent;
+  agentFindBtn.textContent = "Finding…";
+  setAgentStatus("");
+  if (agentFindResult) agentFindResult.hidden = true;
+
+  try {
+    const data = await send("FIND_ELEMENT", { query });
+    if (!data) throw new Error("No response from assistant.");
+
+    const { n, reason, confidence, element, totalScanned } = data;
+
+    if (n === null || !element) {
+      setAgentStatus(reason || `No matching element found among ${totalScanned || 0} interactive elements.`, "warn");
+      return;
+    }
+
+    lastFoundElement = element;
+    badgesVisible = true;
+
+    // Show result card
+    if (agentFindResult) {
+      agentFindResult.hidden = false;
+      if (agentFindNum) {
+        agentFindNum.textContent = String(n);
+        agentFindNum.className =
+          "agent-element-num" +
+          (element.consequential ? " agent-element-num--consequential" : "") +
+          (element.sensitive ? " agent-element-num--sensitive" : "");
+      }
+      if (agentFindLabel) {
+        agentFindLabel.textContent = element.text || `<${element.tag}>`;
+      }
+      if (agentFindConfidence) {
+        const confText = confidence ? confidence.toUpperCase() : "MEDIUM";
+        agentFindConfidence.textContent = confText + " CONFIDENCE";
+        agentFindConfidence.className = `agent-confidence-pill agent-confidence-pill--${confidence || "medium"}`;
+      }
+      if (agentFindReason) {
+        agentFindReason.textContent = reason;
+      }
+      if (agentFindWarning) {
+        agentFindWarning.hidden = confidence !== "low";
+      }
+    }
+
+    // Reveal controls row since badges are displayed
+    if (agentControlsRow) agentControlsRow.hidden = false;
+    if (agentToggleBadgesBtn) agentToggleBadgesBtn.textContent = "Hide badges";
+
+    setAgentStatus(`Found and highlighted element [${n}].`);
+  } catch (err) {
+    setAgentStatus(err.message || "Could not find element.", "warn");
+  } finally {
+    agentFindBtn.disabled = false;
+    agentFindBtn.textContent = prevBtnText;
+  }
+}
+
+if (agentFindBtn) {
+  agentFindBtn.addEventListener("click", runFindElement);
+}
+
+if (agentFindInput) {
+  agentFindInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      runFindElement();
+    }
+  });
+}
+
+if (agentRehighlightBtn) {
+  agentRehighlightBtn.addEventListener("click", async () => {
+    if (!lastFoundElement || !lastFoundElement.n) return;
+    try {
+      await send("HIGHLIGHT_ELEMENT", { n: lastFoundElement.n });
+    } catch (_err) {}
+  });
+}
 
 // ── Theme (dark / light mode) ─────────────────────────────────────────────────
 
@@ -1315,6 +1805,421 @@ async function checkAndRunPendingAction() {
   }
 }
 
+// ── Agent Tab & Errand Loop (Slice 3.1, 3.2, 3.3, 3.4) ───────────────────────
+
+const agentGoalInput = document.getElementById("agent-goal-input");
+const agentDryRunCheckbox = document.getElementById("agent-dryrun-checkbox");
+const agentStartBtn = document.getElementById("agent-start-btn");
+const agentRunningCard = document.getElementById("agent-running-card");
+const agentRunningLabel = document.getElementById("agent-running-label");
+const agentRunningStep = document.getElementById("agent-running-step");
+const agentRunningStopBtn = document.getElementById("agent-running-stop-btn");
+const agentProposalCard = document.getElementById("agent-proposal-card");
+const agentProposalStep = document.getElementById("agent-proposal-step");
+const agentProposalDryRunBadge = document.getElementById("agent-proposal-dryrun-badge");
+const agentProposalAction = document.getElementById("agent-proposal-action");
+const agentProposalNum = document.getElementById("agent-proposal-num");
+const agentProposalLabel = document.getElementById("agent-proposal-label");
+const agentProposalValueRow = document.getElementById("agent-proposal-value-row");
+const agentProposalValueVal = document.getElementById("agent-proposal-value-val");
+const agentProposalReason = document.getElementById("agent-proposal-reason");
+const agentProposalWarning = document.getElementById("agent-proposal-warning");
+const agentApproveBtn = document.getElementById("agent-approve-btn");
+const agentSkipBtn = document.getElementById("agent-skip-btn");
+const agentStopBtn = document.getElementById("agent-stop-btn");
+const agentCompleteCard = document.getElementById("agent-complete-card");
+const agentCompleteMsg = document.getElementById("agent-complete-msg");
+const agentResetBtn = document.getElementById("agent-reset-btn");
+const agentHistoryCard = document.getElementById("agent-history-card");
+const agentHistoryCount = document.getElementById("agent-history-count");
+const agentHistoryClearBtn = document.getElementById("agent-history-clear-btn");
+const agentHistoryList = document.getElementById("agent-history-list");
+const agentErrandSection = document.getElementById("agent-errand-section");
+const agentLogSection = document.getElementById("agent-log-section");
+const agentLogCount = document.getElementById("agent-log-count");
+const agentLogRefreshBtn = document.getElementById("agent-log-refresh-btn");
+const agentLogClearBtn = document.getElementById("agent-log-clear-btn");
+const agentLogList = document.getElementById("agent-log-list");
+
+function renderAgentSession(session) {
+  console.log("[Sahayak Panel] renderAgentSession:", session ? session.status : "null", session);
+  if (!session || session.status === "idle") {
+    if (agentRunningCard) agentRunningCard.hidden = true;
+    if (agentProposalCard) agentProposalCard.hidden = true;
+    if (agentCompleteCard) agentCompleteCard.hidden = true;
+    if (agentErrandSection) agentErrandSection.hidden = false;
+    if (agentStartBtn) agentStartBtn.disabled = false;
+    if (agentApproveBtn) agentApproveBtn.textContent = "Approve";
+    return;
+  }
+
+  // Render Errand History if available
+  if (agentHistoryCard && agentHistoryList) {
+    if (session.history && session.history.length > 0) {
+      agentHistoryCard.hidden = false;
+      if (agentHistoryCount) agentHistoryCount.textContent = String(session.history.length);
+      agentHistoryList.innerHTML = "";
+      session.history.forEach((stepItem) => {
+        const itemEl = document.createElement("div");
+        itemEl.className = "agent-history-item";
+
+        const mainEl = document.createElement("div");
+        mainEl.className = "agent-history-item-main";
+
+        const stepNumEl = document.createElement("span");
+        stepNumEl.className = "agent-history-item-step";
+        stepNumEl.textContent = `Step ${stepItem.step}:`;
+
+        const actionTextEl = document.createElement("span");
+        const actionName = (stepItem.proposal?.action || "ACTION").toUpperCase();
+        const numPart = stepItem.proposal?.n != null ? ` [${stepItem.proposal.n}]` : "";
+        const valPart = stepItem.proposal?.value ? ` "${stepItem.proposal.value}"` : "";
+        actionTextEl.textContent = ` ${actionName}${numPart}${valPart}`;
+
+        mainEl.appendChild(stepNumEl);
+        mainEl.appendChild(actionTextEl);
+
+        const statusEl = document.createElement("span");
+        statusEl.className = `agent-history-item-status status-${stepItem.status}`;
+        statusEl.textContent = stepItem.status;
+
+        itemEl.appendChild(mainEl);
+        itemEl.appendChild(statusEl);
+        agentHistoryList.appendChild(itemEl);
+      });
+    } else {
+      agentHistoryCard.hidden = true;
+    }
+  }
+
+  const proposal = session.currentProposal || session.pendingProposal;
+  const currentStepNum = session.currentStep || (session.step != null ? session.step + 1 : 1);
+  const maxStepsNum = session.maxSteps || 20;
+
+  if (session.status === "running") {
+    if (agentErrandSection) agentErrandSection.hidden = true;
+    if (agentProposalCard) agentProposalCard.hidden = true;
+    if (agentCompleteCard) agentCompleteCard.hidden = true;
+    if (agentRunningCard) {
+      agentRunningCard.hidden = false;
+      if (agentRunningLabel) agentRunningLabel.textContent = "Planning next step…";
+      if (agentRunningStep) {
+        agentRunningStep.textContent = `Step ${currentStepNum} of ${maxStepsNum}`;
+      }
+    }
+  } else if (session.status === "awaiting_approval" && proposal) {
+    if (agentErrandSection) agentErrandSection.hidden = true;
+    if (agentRunningCard) agentRunningCard.hidden = true;
+    if (agentCompleteCard) agentCompleteCard.hidden = true;
+
+    if (agentProposalCard) {
+      agentProposalCard.hidden = false;
+
+      if (agentProposalStep) {
+        agentProposalStep.textContent = `Step ${currentStepNum} of ${maxStepsNum}`;
+      }
+      if (agentProposalDryRunBadge) {
+        agentProposalDryRunBadge.hidden = !session.dryRun;
+      }
+      if (agentProposalAction) {
+        agentProposalAction.textContent = (proposal.action || "ACTION").toUpperCase();
+        agentProposalAction.setAttribute("data-action", proposal.action || "");
+      }
+      if (agentProposalNum) {
+        if (proposal.n != null) {
+          agentProposalNum.hidden = false;
+          agentProposalNum.textContent = String(proposal.n);
+        } else {
+          agentProposalNum.hidden = true;
+        }
+      }
+      if (agentProposalLabel) {
+        agentProposalLabel.textContent = proposal.label || proposal.reason || `Action: ${proposal.action}`;
+      }
+      if (agentProposalValueRow && agentProposalValueVal) {
+        if ((proposal.action === "type" || proposal.action === "select") && proposal.value !== undefined) {
+          agentProposalValueRow.hidden = false;
+          agentProposalValueVal.textContent = proposal.value;
+        } else {
+          agentProposalValueRow.hidden = true;
+        }
+      }
+      if (agentProposalReason) {
+        agentProposalReason.textContent = proposal.reason || "";
+      }
+      if (agentProposalWarning) {
+        agentProposalWarning.hidden = !proposal.consequential;
+      }
+
+      if (agentApproveBtn) {
+        agentApproveBtn.disabled = false;
+        agentApproveBtn.textContent = session.dryRun ? "Approve (Dry Run)" : "Approve";
+      }
+      if (agentSkipBtn) agentSkipBtn.disabled = false;
+      if (agentStopBtn) agentStopBtn.disabled = false;
+    }
+  } else if (session.status === "complete") {
+    if (agentErrandSection) agentErrandSection.hidden = true;
+    if (agentRunningCard) agentRunningCard.hidden = true;
+    if (agentProposalCard) agentProposalCard.hidden = true;
+    if (agentCompleteCard) {
+      agentCompleteCard.hidden = false;
+      if (agentCompleteMsg) {
+        agentCompleteMsg.textContent = session.stopReason || (proposal && proposal.reason) || "All planned steps finished successfully.";
+      }
+    }
+  } else if (session.status === "stopped" || session.status === "error") {
+    if (agentRunningCard) agentRunningCard.hidden = true;
+    if (agentProposalCard) agentProposalCard.hidden = true;
+    if (agentCompleteCard) agentCompleteCard.hidden = true;
+    if (agentErrandSection) agentErrandSection.hidden = false;
+    if (agentStartBtn) agentStartBtn.disabled = false;
+    const msg = session.lastError || session.stopReason;
+    if (msg) {
+      showBanner(msg);
+    }
+  }
+}
+
+// ── Persistent Action Log (Slice 3.4) ────────────────────────────────────────
+
+async function refreshActionLog() {
+  if (!agentLogList) return;
+  try {
+    const entries = await send("ACTION_LOG_GET", {});
+    const list = Array.isArray(entries) ? entries : [];
+    if (agentLogCount) {
+      agentLogCount.textContent = String(list.length);
+    }
+    agentLogList.innerHTML = "";
+    if (list.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "agent-log-empty";
+      empty.textContent = "No actions logged yet.";
+      agentLogList.appendChild(empty);
+      return;
+    }
+
+    // Render most recent first
+    const reversed = [...list].reverse();
+    reversed.forEach((entry) => {
+      const itemEl = document.createElement("div");
+      itemEl.className = "agent-log-item";
+
+      const topEl = document.createElement("div");
+      topEl.className = "agent-log-item-top";
+
+      const actionEl = document.createElement("div");
+      actionEl.className = "agent-log-item-action";
+      const prop = entry.proposal || {};
+      const actionName = (entry.action || prop.action || "ACTION").toUpperCase();
+      const nVal = entry.n ?? prop.n;
+      const numText = nVal != null ? ` [${nVal}]` : "";
+      const val = entry.value ?? prop.value;
+      const valText = val ? ` "${val}"` : "";
+      actionEl.textContent = `Step ${entry.step}: ${actionName}${numText}${valText}`;
+
+      const decisionEl = document.createElement("span");
+      const dec = entry.decision || "approved";
+      decisionEl.className = `agent-decision-pill ${dec}`;
+      decisionEl.textContent = dec;
+
+      topEl.appendChild(actionEl);
+      topEl.appendChild(decisionEl);
+      itemEl.appendChild(topEl);
+
+      const itemReason = entry.reason || prop.reason || entry.label || prop.label;
+      if (itemReason) {
+        const reasonEl = document.createElement("div");
+        reasonEl.className = "agent-log-item-reason";
+        reasonEl.textContent = itemReason;
+        itemEl.appendChild(reasonEl);
+      }
+
+      const ts = entry.timestamp || entry.at;
+      if (ts) {
+        const timeEl = document.createElement("div");
+        timeEl.className = "agent-log-item-time";
+        timeEl.textContent = new Date(ts).toLocaleTimeString();
+        itemEl.appendChild(timeEl);
+      }
+
+      agentLogList.appendChild(itemEl);
+    });
+  } catch (err) {
+    console.error("[Sahayak] Failed to refresh action log:", err);
+  }
+}
+
+if (agentLogRefreshBtn) {
+  agentLogRefreshBtn.addEventListener("click", () => {
+    refreshActionLog().catch(() => {});
+  });
+}
+
+if (agentLogClearBtn) {
+  agentLogClearBtn.addEventListener("click", async () => {
+    try {
+      await send("ACTION_LOG_CLEAR", {});
+      await refreshActionLog();
+    } catch (err) {
+      showBanner(err.message || "Failed to clear action log.");
+    }
+  });
+}
+
+async function syncAgentState() {
+  try {
+    const session = await send("AGENT_STATE_GET", {});
+    if (session) {
+      renderAgentSession(session);
+    }
+  } catch (_e) {
+    // Best-effort
+  }
+  refreshActionLog().catch(() => {});
+}
+
+if (agentStartBtn && agentGoalInput) {
+  agentStartBtn.addEventListener("click", async () => {
+    const goal = agentGoalInput.value.trim();
+    if (!goal) {
+      agentGoalInput.focus();
+      return;
+    }
+    const dryRun = Boolean(agentDryRunCheckbox && agentDryRunCheckbox.checked);
+    agentStartBtn.disabled = true;
+    showBanner(null);
+    try {
+      if (agentErrandSection) agentErrandSection.hidden = true;
+      if (agentRunningCard) {
+        agentRunningCard.hidden = false;
+        if (agentRunningLabel) agentRunningLabel.textContent = "Scanning page & planning step 1…";
+        if (agentRunningStep) agentRunningStep.textContent = "Step 1";
+      }
+
+      // Explicitly pass active tabId to avoid service-worker window guessing
+      let tabId = undefined;
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab && tab.id) tabId = tab.id;
+        else {
+          const [lastTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+          if (lastTab && lastTab.id) tabId = lastTab.id;
+        }
+      } catch (_e) {}
+
+      const session = await send("AGENT_START", { goal, dryRun, tabId });
+      renderAgentSession(session);
+    } catch (err) {
+      if (agentErrandSection) agentErrandSection.hidden = false;
+      if (agentRunningCard) agentRunningCard.hidden = true;
+      agentStartBtn.disabled = false;
+      showBanner(err.message || "Failed to start errand.");
+    }
+  });
+}
+
+if (agentApproveBtn) {
+  agentApproveBtn.addEventListener("click", async () => {
+    agentApproveBtn.disabled = true;
+    if (agentSkipBtn) agentSkipBtn.disabled = true;
+    if (agentStopBtn) agentStopBtn.disabled = true;
+    if (agentProposalCard) agentProposalCard.hidden = true;
+    if (agentRunningCard) {
+      agentRunningCard.hidden = false;
+      if (agentRunningLabel) agentRunningLabel.textContent = "Executing action & planning next step…";
+    }
+    try {
+      const session = await send("AGENT_APPROVE", {});
+      renderAgentSession(session);
+    } catch (err) {
+      if (agentRunningCard) agentRunningCard.hidden = true;
+      if (agentProposalCard) agentProposalCard.hidden = false;
+      agentApproveBtn.disabled = false;
+      if (agentSkipBtn) agentSkipBtn.disabled = false;
+      if (agentStopBtn) agentStopBtn.disabled = false;
+      showBanner(err.message || "Failed to execute approved action.");
+    }
+  });
+}
+
+if (agentSkipBtn) {
+  agentSkipBtn.addEventListener("click", async () => {
+    agentSkipBtn.disabled = true;
+    if (agentApproveBtn) agentApproveBtn.disabled = true;
+    if (agentStopBtn) agentStopBtn.disabled = true;
+    if (agentProposalCard) agentProposalCard.hidden = true;
+    if (agentRunningCard) {
+      agentRunningCard.hidden = false;
+      if (agentRunningLabel) agentRunningLabel.textContent = "Skipping step & planning next step…";
+    }
+    try {
+      const session = await send("AGENT_SKIP", {});
+      renderAgentSession(session);
+    } catch (err) {
+      if (agentRunningCard) agentRunningCard.hidden = true;
+      if (agentProposalCard) agentProposalCard.hidden = false;
+      agentSkipBtn.disabled = false;
+      if (agentApproveBtn) agentApproveBtn.disabled = false;
+      if (agentStopBtn) agentStopBtn.disabled = false;
+      showBanner(err.message || "Failed to skip step.");
+    }
+  });
+}
+
+async function stopAgent() {
+  if (agentStopBtn) agentStopBtn.disabled = true;
+  if (agentRunningStopBtn) agentRunningStopBtn.disabled = true;
+  try {
+    const session = await send("AGENT_STOP", { reason: "Stopped by user" });
+    renderAgentSession(session);
+  } catch (err) {
+    showBanner(err.message || "Failed to stop agent.");
+  } finally {
+    if (agentStopBtn) agentStopBtn.disabled = false;
+    if (agentRunningStopBtn) agentRunningStopBtn.disabled = false;
+    if (agentRunningCard && !agentRunningCard.hidden) {
+      agentRunningCard.hidden = true;
+      if (agentErrandSection) agentErrandSection.hidden = false;
+      if (agentStartBtn) agentStartBtn.disabled = false;
+    }
+  }
+}
+
+if (agentStopBtn) agentStopBtn.addEventListener("click", stopAgent);
+if (agentRunningStopBtn) agentRunningStopBtn.addEventListener("click", stopAgent);
+
+if (agentHistoryClearBtn) {
+  agentHistoryClearBtn.addEventListener("click", async () => {
+    try {
+      const session = await send("AGENT_HISTORY_CLEAR", {});
+      if (agentHistoryCard) agentHistoryCard.hidden = true;
+      if (agentHistoryList) agentHistoryList.innerHTML = "";
+      if (agentHistoryCount) agentHistoryCount.textContent = "0";
+      if (session) renderAgentSession(session);
+    } catch (err) {
+      showBanner(err.message || "Failed to clear errand steps log.");
+    }
+  });
+}
+
+if (agentResetBtn) {
+  agentResetBtn.addEventListener("click", async () => {
+    try {
+      await send("AGENT_RESET", {});
+    } catch (_e) {}
+    if (agentGoalInput) agentGoalInput.value = "";
+    if (agentCompleteCard) agentCompleteCard.hidden = true;
+    if (agentErrandSection) agentErrandSection.hidden = false;
+    if (agentStartBtn) agentStartBtn.disabled = false;
+    if (agentHistoryCard) agentHistoryCard.hidden = true;
+    if (agentHistoryList) agentHistoryList.innerHTML = "";
+    if (agentHistoryCount) agentHistoryCount.textContent = "0";
+  });
+}
+
+
 if (globalThis.chrome && chrome.storage && chrome.storage.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
@@ -1328,9 +2233,22 @@ if (globalThis.chrome && chrome.storage && chrome.storage.onChanged) {
     if (changes.pendingContextAction && changes.pendingContextAction.newValue) {
       checkAndRunPendingAction();
     }
+
+    // Agent session updated by loop or another event
+    if (changes.agentSession) {
+      renderAgentSession(changes.agentSession.newValue);
+    }
+
+    // Persistent action log updated
+    if (changes.actionLog) {
+      refreshActionLog().catch(() => {});
+    }
   });
 }
 
 loadSettings().catch((err) => {
   showBanner(err.message || "Could not load settings.");
 });
+
+syncAgentState().catch(() => {});
+refreshActionLog().catch(() => {});

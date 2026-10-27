@@ -1,4 +1,15 @@
-importScripts("../lib/utils.js", "ai/prompts.js", "ai/gemini.js", "ai/groq.js", "ai/ai.js", "ai/cache.js", "router.js");
+importScripts(
+  "/lib/utils.js",
+  "/background/ai/prompts.js",
+  "/background/ai/gemini.js",
+  "/background/ai/groq.js",
+  "/background/ai/ai.js",
+  "/background/ai/cache.js",
+  "/background/agent/schema.js",
+  "/background/agent/persist.js",
+  "/background/agent/loop.js",
+  "/background/router.js"
+);
 
 // ── Side panel behaviour ──────────────────────────────────────────────────────
 
@@ -52,6 +63,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 enableActionOpensPanel();
+restoreAgentSession().catch(() => {});
 
 // ── Context menu click handler ────────────────────────────────────────────────
 
@@ -130,3 +142,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
   return true;
 });
+
+restoreAgentSession().catch(() => {});
+

@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Internship Application — Practice Form | Sahayak</title>
+  <meta name="description" content="A multi-step internship application form for Sahayak agent practice. Fill in personal details, college info, skills, and submit your application." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0f14;
+      --surface: #13161e;
+      --card: #1a1e28;
+      --card-border: rgba(255,255,255,0.07);
+      --accent: #6c63ff;
+      --accent-2: #a78bfa;
+      --accent-glow: rgba(108,99,255,0.25);
+      --success: #34d399;
+      --warn: #fbbf24;
+      --danger: #f87171;
+      --text: #e8eaf0;
+      --text-muted: #8b90a0;
+      --text-dim: #555c6e;
+      --input-bg: rgba(255,255,255,0.04);
+      --input-border: rgba(255,255,255,0.10);
+      --input-focus: rgba(108,99,255,0.5);
+      --radius: 12px;
+      --radius-lg: 20px;
+      --shadow: 0 8px 32px rgba(0,0,0,0.4);
+      --transition: 0.25s ease;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px 64px;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 20% 10%, rgba(108,99,255,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 80%, rgba(167,139,250,0.08) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .page-header {
+      text-align: center;
+      margin-bottom: 40px;
+      position: relative;
+      z-index: 1;
+    }
+    .practice-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(108,99,255,0.15);
+      border: 1px solid rgba(108,99,255,0.3);
+      color: var(--accent-2);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 12px;
+      border-radius: 999px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: clamp(1.6rem, 4vw, 2.4rem);
+      font-weight: 700;
+      background: linear-gradient(135deg, #e8eaf0 0%, var(--accent-2) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1.2;
+      margin-bottom: 8px;
+    }
+    .page-subtitle { color: var(--text-muted); font-size: 0.9rem; }
+
+    .stepper {
+      display: flex;
+      align-items: center;
+      margin-bottom: 36px;
+      position: relative;
+      z-index: 1;
+      max-width: 600px;
+      width: 100%;
+    }
+    .step-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+      position: relative;
+    }
+    .step-item:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      right: -50%;
+      height: 2px;
+      background: var(--card-border);
+      transition: background var(--transition);
+      z-index: -1;
+    }
+    .step-item.completed:not(:last-child)::after { background: var(--accent); }
+    .step-circle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 2px solid var(--card-border);
+      background: var(--card);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-dim);
+      transition: all var(--transition);
+      z-index: 1;
+    }
+    .step-item.active .step-circle {
+      border-color: var(--accent);
+      background: var(--accent-glow);
+      color: var(--accent-2);
+      box-shadow: 0 0 16px var(--accent-glow);
+    }
+    .step-item.completed .step-circle {
+      border-color: var(--success);
+      background: rgba(52,211,153,0.15);
+      color: var(--success);
+    }
+    .step-label {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--text-dim);
+      margin-top: 6px;
+      text-align: center;
+      transition: color var(--transition);
+      white-space: nowrap;
+    }
+    .step-item.active .step-label { color: var(--accent-2); }
+    .step-item.completed .step-label { color: var(--success); }
+
+    .form-card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 40px;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: var(--shadow);
+      position: relative;
+      z-index: 1;
+      backdrop-filter: blur(8px);
+    }
+
+    .step-panel { display: none; }
+    .step-panel.active { display: block; animation: fadeSlide 0.3s ease; }
+
+    @keyframes fadeSlide {
+      from { opacity: 0; transform: translateX(20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    .step-title { font-size: 1.2rem; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .step-desc { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 28px; }
+
+    .field-group { margin-bottom: 20px; }
+    .field-group label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      letter-spacing: 0.03em;
+    }
+    .field-group label .required { color: var(--accent-2); margin-left: 2px; }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="number"],
+    input[type="url"],
+    select,
+    textarea {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.9rem;
+      padding: 11px 14px;
+      outline: none;
+      transition: border-color var(--transition), box-shadow var(--transition);
+      appearance: none;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--input-focus);
+    }
+    input::placeholder, textarea::placeholder { color: var(--text-dim); }
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b90a0' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      padding-right: 36px;
+      cursor: pointer;
+    }
+    select option { background: var(--surface); }
+    textarea { resize: vertical; min-height: 90px; line-height: 1.5; }
+
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 480px) { .field-row { grid-template-columns: 1fr; } }
+
+    .skill-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .skill-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(108,99,255,0.15);
+      border: 1px solid rgba(108,99,255,0.3);
+      color: var(--accent-2);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background var(--transition);
+    }
+    .skill-chip.selected { background: rgba(108,99,255,0.35); border-color: var(--accent); color: #fff; }
+    .skill-chip:hover { background: rgba(108,99,255,0.25); }
+
+    .checkbox-group { display: flex; flex-direction: column; gap: 10px; }
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.87rem;
+      color: var(--text);
+      cursor: pointer;
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--card-border);
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .checkbox-label:hover { background: rgba(255,255,255,0.03); border-color: rgba(108,99,255,0.3); }
+    .checkbox-label input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); flex-shrink: 0; }
+
+    .radio-group { display: flex; flex-direction: column; gap: 10px; }
+    .radio-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.87rem;
+      color: var(--text);
+      cursor: pointer;
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--card-border);
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .radio-label:hover { background: rgba(255,255,255,0.03); border-color: rgba(108,99,255,0.3); }
+    .radio-label input[type="radio"] { width: 16px; height: 16px; accent-color: var(--accent); flex-shrink: 0; }
+
+    .review-section {
+      background: var(--surface);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .review-section h4 {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent-2);
+      margin-bottom: 12px;
+    }
+    .review-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      font-size: 0.85rem;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .review-row:last-child { border-bottom: none; }
+    .review-key { color: var(--text-muted); flex-shrink: 0; }
+    .review-val { color: var(--text); text-align: right; word-break: break-word; }
+
+    .agreement {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      background: rgba(108,99,255,0.07);
+      border: 1px solid rgba(108,99,255,0.2);
+      border-radius: var(--radius);
+      padding: 14px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-bottom: 20px;
+      cursor: pointer;
+    }
+    .agreement input[type="checkbox"] { margin-top: 2px; flex-shrink: 0; accent-color: var(--accent); }
+
+    .btn-row { display: flex; justify-content: space-between; gap: 12px; margin-top: 32px; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 11px 22px;
+      border-radius: var(--radius);
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: all var(--transition);
+      outline: none;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(108,99,255,0.35);
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(108,99,255,0.45); }
+    .btn-secondary {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+    .btn-success {
+      background: linear-gradient(135deg, #059669 0%, #34d399 100%);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(52,211,153,0.3);
+    }
+    .btn-success:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(52,211,153,0.4); }
+
+    .success-state { display: none; text-align: center; padding: 20px 0; }
+    .success-state.show { display: block; animation: fadeSlide 0.4s ease; }
+    .success-icon {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      background: rgba(52,211,153,0.15);
+      border: 2px solid var(--success);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      margin: 0 auto 20px;
+      box-shadow: 0 0 32px rgba(52,211,153,0.25);
+    }
+    .success-state h2 { font-size: 1.4rem; font-weight: 700; color: var(--success); margin-bottom: 8px; }
+    .success-state p { color: var(--text-muted); font-size: 0.88rem; }
+    .ref-id {
+      display: inline-block;
+      margin-top: 16px;
+      background: var(--surface);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: var(--accent-2);
+      letter-spacing: 0.05em;
+    }
+
+    .field-error { font-size: 0.75rem; color: var(--danger); margin-top: 5px; display: none; }
+    .field-group.has-error input,
+    .field-group.has-error select,
+    .field-group.has-error textarea { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(248,113,113,0.2); }
+    .field-group.has-error .field-error { display: block; }
+    .field-hint { font-size: 0.75rem; color: var(--text-dim); margin-top: 5px; }
+    .char-counter { font-size: 0.72rem; color: var(--text-dim); text-align: right; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+<header class="page-header">
+  <div class="practice-badge">&#x1F916; Sahayak Practice Page</div>
+  <h1>Internship Application</h1>
+  <p class="page-subtitle">Complete the form below — each field is an interactive element the agent can fill.</p>
+</header>
+
+<nav class="stepper" aria-label="Form steps">
+  <div class="step-item active" id="step-indicator-1">
+    <div class="step-circle">1</div>
+    <span class="step-label">Personal</span>
+  </div>
+  <div class="step-item" id="step-indicator-2">
+    <div class="step-circle">2</div>
+    <span class="step-label">College</span>
+  </div>
+  <div class="step-item" id="step-indicator-3">
+    <div class="step-circle">3</div>
+    <span class="step-label">Skills</span>
+  </div>
+  <div class="step-item" id="step-indicator-4">
+    <div class="step-circle">4</div>
+    <span class="step-label">Review</span>
+  </div>
+  <div class="step-item" id="step-indicator-5">
+    <div class="step-circle">5</div>
+    <span class="step-label">Submit</span>
+  </div>
+</nav>
+
+<main class="form-card">
+
+  <!-- Step 1: Personal Info -->
+  <section class="step-panel active" id="panel-1" aria-label="Step 1: Personal Information">
+    <h2 class="step-title">Personal Information</h2>
+    <p class="step-desc">Tell us a bit about yourself.</p>
+
+    <div class="field-row">
+      <div class="field-group" id="fg-first-name">
+        <label for="first-name">First Name <span class="required">*</span></label>
+        <input type="text" id="first-name" name="first-name" placeholder="e.g. Priya" autocomplete="given-name" />
+        <span class="field-error" id="err-first-name">First name is required.</span>
+      </div>
+      <div class="field-group" id="fg-last-name">
+        <label for="last-name">Last Name <span class="required">*</span></label>
+        <input type="text" id="last-name" name="last-name" placeholder="e.g. Sharma" autocomplete="family-name" />
+        <span class="field-error" id="err-last-name">Last name is required.</span>
+      </div>
+    </div>
+
+    <div class="field-group" id="fg-email">
+      <label for="email">Email Address <span class="required">*</span></label>
+      <input type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email" />
+      <span class="field-error" id="err-email">Please enter a valid email address.</span>
+    </div>
+
+    <div class="field-group" id="fg-phone">
+      <label for="phone">Phone Number <span class="required">*</span></label>
+      <input type="tel" id="phone" name="phone" placeholder="+91 98765 43210" autocomplete="tel" />
+      <span class="field-error" id="err-phone">Phone number is required.</span>
+    </div>
+
+    <div class="field-group" id="fg-dob">
+      <label for="dob">Date of Birth</label>
+      <input type="text" id="dob" name="dob" placeholder="DD / MM / YYYY" />
+      <span class="field-hint">Used to confirm eligibility (18+ only).</span>
+    </div>
+
+    <div class="btn-row">
+      <span></span>
+      <button class="btn btn-primary" id="next-1" onclick="nextStep(1)">Next &#x2192;</button>
+    </div>
+  </section>
+
+  <!-- Step 2: College Info -->
+  <section class="step-panel" id="panel-2" aria-label="Step 2: College Details">
+    <h2 class="step-title">College Details</h2>
+    <p class="step-desc">Tell us about your academic background.</p>
+
+    <div class="field-group" id="fg-college">
+      <label for="college">College / University <span class="required">*</span></label>
+      <input type="text" id="college" name="college" placeholder="e.g. IIT Bombay" />
+      <span class="field-error" id="err-college">College name is required.</span>
+    </div>
+
+    <div class="field-row">
+      <div class="field-group" id="fg-degree">
+        <label for="degree">Degree <span class="required">*</span></label>
+        <select id="degree" name="degree">
+          <option value="">Select degree...</option>
+          <option value="btech">B.Tech / B.E.</option>
+          <option value="bsc">B.Sc.</option>
+          <option value="bca">BCA</option>
+          <option value="mtech">M.Tech / M.E.</option>
+          <option value="msc">M.Sc.</option>
+          <option value="mca">MCA</option>
+          <option value="mba">MBA</option>
+          <option value="phd">PhD</option>
+          <option value="other">Other</option>
+        </select>
+        <span class="field-error" id="err-degree">Please select a degree.</span>
+      </div>
+      <div class="field-group" id="fg-year">
+        <label for="year">Current Year <span class="required">*</span></label>
+        <select id="year" name="year">
+          <option value="">Select year...</option>
+          <option value="1">1st Year</option>
+          <option value="2">2nd Year</option>
+          <option value="3">3rd Year</option>
+          <option value="4">4th Year</option>
+          <option value="5">5th Year</option>
+          <option value="grad">Recent Graduate</option>
+        </select>
+        <span class="field-error" id="err-year">Please select your current year.</span>
+      </div>
+    </div>
+
+    <div class="field-group" id="fg-branch">
+      <label for="branch">Branch / Major <span class="required">*</span></label>
+      <input type="text" id="branch" name="branch" placeholder="e.g. Computer Science and Engineering" />
+      <span class="field-error" id="err-branch">Branch is required.</span>
+    </div>
+
+    <div class="field-row">
+      <div class="field-group" id="fg-cgpa">
+        <label for="cgpa">CGPA / Percentage</label>
+        <input type="text" id="cgpa" name="cgpa" placeholder="e.g. 8.5 / 10 or 85%" />
+      </div>
+      <div class="field-group" id="fg-grad-year">
+        <label for="grad-year">Expected Graduation Year</label>
+        <input type="number" id="grad-year" name="grad-year" placeholder="e.g. 2026" min="2024" max="2035" />
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="back-2" onclick="prevStep(2)">&#x2190; Back</button>
+      <button class="btn btn-primary" id="next-2" onclick="nextStep(2)">Next &#x2192;</button>
+    </div>
+  </section>
+
+  <!-- Step 3: Skills -->
+  <section class="step-panel" id="panel-3" aria-label="Step 3: Skills and Experience">
+    <h2 class="step-title">Skills &amp; Experience</h2>
+    <p class="step-desc">Let us know what you bring to the table.</p>
+
+    <div class="field-group">
+      <label>Technical Skills <span class="required">*</span></label>
+      <p class="field-hint" style="margin-bottom:10px">Click to select relevant skills.</p>
+      <div class="skill-chips" id="skill-chips">
+        <button type="button" class="skill-chip" data-skill="Python" id="skill-python" onclick="toggleSkill(this)">Python</button>
+        <button type="button" class="skill-chip" data-skill="JavaScript" id="skill-js" onclick="toggleSkill(this)">JavaScript</button>
+        <button type="button" class="skill-chip" data-skill="React" id="skill-react" onclick="toggleSkill(this)">React</button>
+        <button type="button" class="skill-chip" data-skill="Node.js" id="skill-node" onclick="toggleSkill(this)">Node.js</button>
+        <button type="button" class="skill-chip" data-skill="Machine Learning" id="skill-ml" onclick="toggleSkill(this)">Machine Learning</button>
+        <button type="button" class="skill-chip" data-skill="Data Analysis" id="skill-da" onclick="toggleSkill(this)">Data Analysis</button>
+        <button type="button" class="skill-chip" data-skill="Java" id="skill-java" onclick="toggleSkill(this)">Java</button>
+        <button type="button" class="skill-chip" data-skill="C/C++" id="skill-c" onclick="toggleSkill(this)">C/C++</button>
+        <button type="button" class="skill-chip" data-skill="SQL" id="skill-sql" onclick="toggleSkill(this)">SQL</button>
+        <button type="button" class="skill-chip" data-skill="Cloud (AWS/GCP)" id="skill-cloud" onclick="toggleSkill(this)">Cloud (AWS/GCP)</button>
+        <button type="button" class="skill-chip" data-skill="UI/UX Design" id="skill-uiux" onclick="toggleSkill(this)">UI/UX Design</button>
+        <button type="button" class="skill-chip" data-skill="DevOps" id="skill-devops" onclick="toggleSkill(this)">DevOps</button>
+      </div>
+      <span class="field-error" id="err-skills" style="display:none">Please select at least one skill.</span>
+    </div>
+
+    <div class="field-group" id="fg-other-skills">
+      <label for="other-skills">Other Skills</label>
+      <input type="text" id="other-skills" name="other-skills" placeholder="e.g. Figma, Blender, Arabic..." />
+    </div>
+
+    <div class="field-group" id="fg-domain">
+      <label for="domain">Preferred Internship Domain <span class="required">*</span></label>
+      <select id="domain" name="domain">
+        <option value="">Select domain...</option>
+        <option value="swe">Software Engineering</option>
+        <option value="ml-ai">ML / AI</option>
+        <option value="data">Data Science / Analytics</option>
+        <option value="product">Product Management</option>
+        <option value="design">Design / UX</option>
+        <option value="marketing">Digital Marketing</option>
+        <option value="finance">Finance / FinTech</option>
+        <option value="research">Research</option>
+        <option value="other">Other</option>
+      </select>
+      <span class="field-error" id="err-domain">Please select a domain.</span>
+    </div>
+
+    <div class="field-group" id="fg-experience">
+      <label for="experience">Tell us about a relevant project or internship</label>
+      <textarea id="experience" name="experience" maxlength="500"
+        placeholder="Describe a project, hackathon, or experience you are proud of..."></textarea>
+      <div class="char-counter"><span id="exp-count">0</span> / 500</div>
+    </div>
+
+    <div class="field-group" id="fg-portfolio">
+      <label for="portfolio">GitHub / Portfolio Link</label>
+      <input type="url" id="portfolio" name="portfolio" placeholder="https://github.com/yourusername" />
+    </div>
+
+    <div class="field-group">
+      <label>Availability</label>
+      <div class="radio-group">
+        <label class="radio-label">
+          <input type="radio" name="availability" id="avail-immediate" value="immediate" />
+          Immediate (within 2 weeks)
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="availability" id="avail-month" value="1-month" />
+          Within 1 month
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="availability" id="avail-semester" value="semester" />
+          After semester ends
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="availability" id="avail-flexible" value="flexible" />
+          Flexible / Discuss
+        </label>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label>How did you hear about us?</label>
+      <div class="checkbox-group">
+        <label class="checkbox-label">
+          <input type="checkbox" id="hear-linkedin" name="hear" value="linkedin" />
+          LinkedIn
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="hear-college" name="hear" value="college" />
+          College / Campus
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="hear-friend" name="hear" value="friend" />
+          Friend / Referral
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="hear-other" name="hear" value="other" />
+          Other
+        </label>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="back-3" onclick="prevStep(3)">&#x2190; Back</button>
+      <button class="btn btn-primary" id="next-3" onclick="nextStep(3)">Review &#x2192;</button>
+    </div>
+  </section>
+
+  <!-- Step 4: Review -->
+  <section class="step-panel" id="panel-4" aria-label="Step 4: Review">
+    <h2 class="step-title">Review Your Application</h2>
+    <p class="step-desc">Please verify the details below before submitting.</p>
+
+    <div class="review-section">
+      <h4>Personal</h4>
+      <div class="review-row">
+        <span class="review-key">Full Name</span>
+        <span class="review-val" id="rv-name">-</span>
+      </div>
+      <div class="review-row">
+        <span class="review-key">Email</span>
+        <span class="review-val" id="rv-email">-</span>
+      </div>
+      <div class="review-row">
+        <span class="review-key">Phone</span>
+        <span class="review-val" id="rv-phone">-</span>
+      </div>
+    </div>
+
+    <div class="review-section">
+      <h4>Academic</h4>
+      <div class="review-row">
+        <span class="review-key">College</span>
+        <span class="review-val" id="rv-college">-</span>
+      </div>
+      <div class="review-row">
+        <span class="review-key">Degree / Branch</span>
+        <span class="review-val" id="rv-degree">-</span>
+      </div>
+      <div class="review-row">
+        <span class="review-key">Year</span>
+        <span class="review-val" id="rv-year">-</span>
+      </div>
+      <div class="review-row">
+        <span class="review-key">CGPA</span>
+        <span class="review-val" id="rv-cgpa">-</span>
+      </div>
+    </div>
+
+    <div class="review-section">
+      <h4>Skills &amp; Experience</h4>
+      <div class="review-row">
+        <span class="review-key">Skills</span>
+        <span class="review-val" id="rv-skills">-</span>
+      </div>
+      <div class="review-row">
+        <span class="review-key">Domain</span>
+        <span class="review-val" id="rv-domain">-</span>
+      </div>
+      <div class="review-row">
+        <span class="review-key">Availability</span>
+        <span class="review-val" id="rv-avail">-</span>
+      </div>
+      <div class="review-row">
+        <span class="review-key">Portfolio</span>
+        <span class="review-val" id="rv-portfolio">-</span>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="back-4" onclick="prevStep(4)">&#x2190; Edit</button>
+      <button class="btn btn-primary" id="next-4" onclick="nextStep(4)">Looks good &#x2192;</button>
+    </div>
+  </section>
+
+  <!-- Step 5: Submit -->
+  <section class="step-panel" id="panel-5" aria-label="Step 5: Submit">
+    <h2 class="step-title">Final Step</h2>
+    <p class="step-desc">Read and confirm before submitting.</p>
+
+    <label class="agreement">
+      <input type="checkbox" id="agree-terms" name="agree-terms" />
+      I confirm that all information provided is accurate. I agree to the terms of the internship programme and consent to my data being used for hiring purposes.
+    </label>
+
+    <label class="agreement">
+      <input type="checkbox" id="agree-updates" name="agree-updates" />
+      I would like to receive updates and opportunities from this organisation via email.
+    </label>
+
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="back-5" onclick="prevStep(5)">&#x2190; Back</button>
+      <button class="btn btn-success" id="submit-btn" onclick="submitForm()">&#x1F680; Submit Application</button>
+    </div>
+  </section>
+
+  <!-- Success State -->
+  <div class="success-state" id="success-state">
+    <div class="success-icon">&#x2713;</div>
+    <h2>Application Submitted!</h2>
+    <p>Thank you. We will review your application and get back to you within 5-7 business days.</p>
+    <div class="ref-id" id="ref-id-display">REF: -</div>
+    <br/>
+    <button class="btn btn-secondary" id="restart-btn" onclick="restartForm()" style="margin-top:24px">Fill Again</button>
+  </div>
+
+</main>
+
+<script>
+  let currentStep = 1;
+  const TOTAL_STEPS = 5;
+
+  const expTextarea = document.getElementById('experience');
+  const expCount = document.getElementById('exp-count');
+  expTextarea.addEventListener('input', () => {
+    expCount.textContent = expTextarea.value.length;
+  });
+
+  function toggleSkill(btn) {
+    btn.classList.toggle('selected');
+  }
+
+  function setError(groupId, errId, show) {
+    const g = document.getElementById(groupId);
+    const e = document.getElementById(errId);
+    if (!g || !e) return;
+    if (show) { g.classList.add('has-error'); e.style.display = 'block'; }
+    else { g.classList.remove('has-error'); e.style.display = 'none'; }
+  }
+
+  function validateStep(step) {
+    let ok = true;
+    if (step === 1) {
+      const fn = document.getElementById('first-name').value.trim();
+      const ln = document.getElementById('last-name').value.trim();
+      const em = document.getElementById('email').value.trim();
+      const ph = document.getElementById('phone').value.trim();
+      setError('fg-first-name', 'err-first-name', !fn);
+      setError('fg-last-name', 'err-last-name', !ln);
+      setError('fg-email', 'err-email', !em || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em));
+      setError('fg-phone', 'err-phone', !ph);
+      ok = fn && ln && em && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em) && ph;
+    }
+    if (step === 2) {
+      const co = document.getElementById('college').value.trim();
+      const dg = document.getElementById('degree').value;
+      const yr = document.getElementById('year').value;
+      const br = document.getElementById('branch').value.trim();
+      setError('fg-college', 'err-college', !co);
+      setError('fg-degree', 'err-degree', !dg);
+      setError('fg-year', 'err-year', !yr);
+      setError('fg-branch', 'err-branch', !br);
+      ok = co && dg && yr && br;
+    }
+    if (step === 3) {
+      const selected = document.querySelectorAll('#skill-chips .skill-chip.selected');
+      const dm = document.getElementById('domain').value;
+      const skillErr = document.getElementById('err-skills');
+      if (selected.length === 0) { skillErr.style.display = 'block'; ok = false; }
+      else { skillErr.style.display = 'none'; }
+      setError('fg-domain', 'err-domain', !dm);
+      if (!dm) ok = false;
+    }
+    return Boolean(ok);
+  }
+
+  function goToStep(n) {
+    document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.step-item').forEach(i => i.classList.remove('active'));
+    for (let i = 1; i < n; i++) {
+      const ind = document.getElementById('step-indicator-' + i);
+      if (ind) {
+        ind.classList.remove('active');
+        ind.classList.add('completed');
+        ind.querySelector('.step-circle').textContent = '✓';
+      }
+    }
+    const panel = document.getElementById('panel-' + n);
+    const indicator = document.getElementById('step-indicator-' + n);
+    if (panel) panel.classList.add('active');
+    if (indicator) { indicator.classList.remove('completed'); indicator.classList.add('active'); }
+    currentStep = n;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function nextStep(from) {
+    if (!validateStep(from)) return;
+    if (from === 3) populateReview();
+    if (from < TOTAL_STEPS) goToStep(from + 1);
+  }
+
+  function prevStep(from) {
+    if (from > 1) {
+      const ind = document.getElementById('step-indicator-' + (from - 1));
+      if (ind) {
+        ind.classList.remove('completed');
+        ind.querySelector('.step-circle').textContent = from - 1;
+      }
+      goToStep(from - 1);
+    }
+  }
+
+  function populateReview() {
+    const fn = document.getElementById('first-name').value.trim();
+    const ln = document.getElementById('last-name').value.trim();
+    document.getElementById('rv-name').textContent    = fn + ' ' + ln;
+    document.getElementById('rv-email').textContent   = document.getElementById('email').value.trim();
+    document.getElementById('rv-phone').textContent   = document.getElementById('phone').value.trim();
+    document.getElementById('rv-college').textContent = document.getElementById('college').value.trim();
+    const degEl = document.getElementById('degree');
+    const degText = degEl.options[degEl.selectedIndex] ? degEl.options[degEl.selectedIndex].text : '-';
+    const branch = document.getElementById('branch').value.trim();
+    document.getElementById('rv-degree').textContent = degText + ' - ' + branch;
+    const yrEl = document.getElementById('year');
+    document.getElementById('rv-year').textContent = yrEl.options[yrEl.selectedIndex] ? yrEl.options[yrEl.selectedIndex].text : '-';
+    document.getElementById('rv-cgpa').textContent = document.getElementById('cgpa').value.trim() || '-';
+    const selected = [...document.querySelectorAll('#skill-chips .skill-chip.selected')].map(b => b.dataset.skill).join(', ');
+    document.getElementById('rv-skills').textContent = selected || '-';
+    const domEl = document.getElementById('domain');
+    document.getElementById('rv-domain').textContent = domEl.options[domEl.selectedIndex] ? domEl.options[domEl.selectedIndex].text : '-';
+    const avail = document.querySelector('input[name="availability"]:checked');
+    document.getElementById('rv-avail').textContent = avail ? avail.closest('.radio-label').textContent.trim() : '-';
+    document.getElementById('rv-portfolio').textContent = document.getElementById('portfolio').value.trim() || '-';
+  }
+
+  function submitForm() {
+    const agree = document.getElementById('agree-terms').checked;
+    if (!agree) { alert('Please accept the terms before submitting.'); return; }
+    const refId = 'SAH-' + Date.now().toString(36).toUpperCase();
+    document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.step-item').forEach(i => {
+      i.classList.remove('active');
+      i.classList.add('completed');
+      i.querySelector('.step-circle').textContent = '✓';
+    });
+    document.getElementById('ref-id-display').textContent = 'REF: ' + refId;
+    document.getElementById('success-state').classList.add('show');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function restartForm() {
+    document.getElementById('success-state').classList.remove('show');
+    document.querySelectorAll('input[type="text"], input[type="email"], input[type="tel"], input[type="number"], input[type="url"], textarea').forEach(el => el.value = '');
+    document.querySelectorAll('select').forEach(el => el.selectedIndex = 0);
+    document.querySelectorAll('input[type="checkbox"], input[type="radio"]').forEach(el => el.checked = false);
+    document.querySelectorAll('.skill-chip').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.has-error').forEach(g => g.classList.remove('has-error'));
+    document.querySelectorAll('.field-error').forEach(e => e.style.display = 'none');
+    expCount.textContent = '0';
+    document.querySelectorAll('.step-item').forEach((i, idx) => {
+      i.classList.remove('active', 'completed');
+      i.querySelector('.step-circle').textContent = idx + 1;
+    });
+    goToStep(1);
+  }
+</script>
+
+<!-- Sahayak Extension Scripts (enables interactive agent scanning on practice page) -->
+<script src="../../lib/readability.js"></script>
+<script src="../../lib/readability-readerable.js"></script>
+<script src="../../content/extract.js"></script>
+<script src="../../content/scanner.js"></script>
+<script src="../../content/overlay.js"></script>
+<script src="../../content/execute.js"></script>
+<script src="../../content/index.js"></script>
+</body>
+</html>

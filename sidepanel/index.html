@@ -38,7 +38,7 @@
           Summarise
         </button>
         <button type="button" class="tab" data-tab="chat" id="tab-chat">Chat</button>
-        <button type="button" class="tab" data-tab="agent" disabled title="Coming in Week 3">Agent</button>
+        <button type="button" class="tab" data-tab="agent" id="tab-agent">Agent</button>
         <button type="button" class="tab" data-tab="skills" disabled title="Coming in Week 4">Skills</button>
       </nav>
 
@@ -145,6 +145,316 @@
               <button type="button" class="link-btn" id="chat-reset-btn">New chat</button>
             </div>
           </div>
+        </section>
+
+        <!-- ── Agent view (Slice 3.1) ──────────────────────────────── -->
+        <section id="view-agent" class="view agent-view" data-view="agent" hidden>
+          <p class="lede">Automate errands with your approval at every step, or find elements on the page.</p>
+
+          <!-- ── Browser Errand (Slice 3.3) ────────────────────────── -->
+          <div class="agent-errand-section" id="agent-errand-section">
+            <p class="section-label">Automate an errand</p>
+            <div class="agent-goal-box">
+              <textarea
+                id="agent-goal-input"
+                class="agent-goal-input"
+                rows="2"
+                placeholder="e.g. Fill internship form with Priya Sharma, priya@example.com, and click Next"
+                aria-label="Errand goal"
+              ></textarea>
+              <div class="agent-goal-actions">
+                <label class="agent-dryrun-toggle" title="When checked, Approve highlights the element without modifying the page.">
+                  <input type="checkbox" id="agent-dryrun-checkbox" />
+                  <span>Dry run</span>
+                </label>
+                <button type="button" class="primary-btn" id="agent-start-btn">Start errand</button>
+              </div>
+            </div>
+            <p class="agent-hint">
+              Sahayak plans one step at a time. No browser action occurs without your approval.
+              <span class="agent-practice-links" style="display:block; margin-top:4px; font-size:11px;">
+                Practice: 
+                <a href="../pages/practice/internship-form.html" target="_blank" style="color:var(--teal);">Internship Form</a> &bull; 
+                <a href="../pages/practice/shop.html" target="_blank" style="color:var(--teal);">Shop</a> &bull; 
+                <a href="../pages/practice/acceptance-gate.html" target="_blank" style="color:var(--teal);">Acceptance Gate</a>
+              </span>
+            </p>
+          </div>
+
+          <!-- Running state card (with Stop button always visible) -->
+          <div id="agent-running-card" class="agent-running-card" hidden>
+            <div class="agent-running-spinner"></div>
+            <div class="agent-running-info">
+              <strong id="agent-running-label">Thinking of next step…</strong>
+              <span id="agent-running-step" class="agent-running-step">Step 1</span>
+            </div>
+            <button type="button" class="secondary-btn secondary-btn--danger" id="agent-running-stop-btn">
+              Stop
+            </button>
+          </div>
+
+          <!-- Proposal Card (Slice 3.3 approval card) -->
+          <div id="agent-proposal-card" class="agent-proposal-card" hidden>
+            <div class="agent-proposal-header">
+              <span class="agent-step-pill" id="agent-proposal-step">Step 1</span>
+              <span id="agent-proposal-dryrun-badge" class="agent-dryrun-badge" hidden>DRY RUN</span>
+              <span class="agent-action-badge" id="agent-proposal-action">CLICK</span>
+            </div>
+
+            <div class="agent-proposal-body">
+              <div class="agent-proposal-target">
+                <span id="agent-proposal-num" class="agent-element-num">1</span>
+                <span id="agent-proposal-label" class="agent-proposal-label">Next button</span>
+              </div>
+              <div id="agent-proposal-value-row" class="agent-proposal-value-row" hidden>
+                <span class="agent-proposal-value-key">Value:</span>
+                <span id="agent-proposal-value-val" class="agent-proposal-value-val"></span>
+              </div>
+              <p id="agent-proposal-reason" class="agent-proposal-reason">
+                Clicking next to proceed to college details.
+              </p>
+              <div id="agent-proposal-warning" class="agent-proposal-warning" hidden>
+                ⚠️ Consequential action (Submit / Pay / Delete) — please verify before approving.
+              </div>
+            </div>
+
+            <div class="agent-proposal-actions">
+              <button type="button" class="primary-btn agent-btn-approve" id="agent-approve-btn">
+                Approve
+              </button>
+              <button type="button" class="secondary-btn" id="agent-skip-btn">
+                Skip
+              </button>
+              <button type="button" class="secondary-btn secondary-btn--danger" id="agent-stop-btn">
+                Stop
+              </button>
+            </div>
+          </div>
+
+          <!-- Complete Card -->
+          <div id="agent-complete-card" class="agent-complete-card" hidden>
+            <div class="agent-complete-icon">✓</div>
+            <div class="agent-complete-body">
+              <strong>Errand complete</strong>
+              <p id="agent-complete-msg">All planned steps finished successfully.</p>
+            </div>
+            <button type="button" class="secondary-btn" id="agent-reset-btn">New errand</button>
+          </div>
+
+          <!-- Errand History Log -->
+          <div id="agent-history-card" class="agent-history-card" hidden>
+            <div class="agent-history-header">
+              <span class="section-label">Errand steps log</span>
+              <div class="agent-log-header-right">
+                <span id="agent-history-count" class="agent-count-badge">0</span>
+                <button type="button" class="agent-text-btn" id="agent-history-clear-btn" title="Clear errand steps log">Clear</button>
+              </div>
+            </div>
+            <div id="agent-history-list" class="agent-history-list"></div>
+          </div>
+
+          <!-- ── Persistent Action Log (Slice 3.4) ──────────────────── -->
+          <div id="agent-log-section" class="agent-log-section">
+            <div class="agent-log-header">
+              <span class="section-label">Persistent Action Log</span>
+              <div class="agent-log-header-right">
+                <span id="agent-log-count" class="agent-count-badge">0</span>
+                <button type="button" class="agent-text-btn" id="agent-log-refresh-btn" title="Refresh action log">Refresh</button>
+                <button type="button" class="agent-text-btn" id="agent-log-clear-btn" title="Clear action log">Clear</button>
+              </div>
+            </div>
+            <div id="agent-log-list" class="agent-log-list">
+              <p class="agent-log-empty">No actions logged yet.</p>
+            </div>
+          </div>
+
+          <div class="agent-divider">
+            <span>or find / scan elements</span>
+          </div>
+
+          <!-- ── Find It For Me (Slice 3.2) ────────────────────────── -->
+          <div class="agent-find-section">
+            <p class="section-label">Find it for me</p>
+            <div class="agent-find-row">
+              <input
+                type="text"
+                id="agent-find-input"
+                class="agent-find-input"
+                placeholder="e.g. Where is email field? or upload resume"
+                aria-label="Describe the element to find"
+              />
+              <button type="button" class="primary-btn agent-find-btn" id="agent-find-btn">
+                Find
+              </button>
+            </div>
+            <p class="agent-hint">Highlights the matching element on the page. Never clicks or acts.</p>
+          </div>
+
+          <!-- Result card for Find It -->
+          <div id="agent-find-result" class="agent-find-result" hidden>
+            <div class="agent-find-header">
+              <div class="agent-find-target">
+                <span id="agent-find-num" class="agent-element-num"></span>
+                <strong id="agent-find-label" class="agent-find-label"></strong>
+              </div>
+              <span id="agent-find-confidence" class="agent-confidence-pill"></span>
+            </div>
+            <p id="agent-find-reason" class="agent-find-reason"></p>
+            <p id="agent-find-warning" class="agent-find-warning" hidden>
+              Confidence is low — this might not be the exact element you're looking for.
+            </p>
+            <div class="agent-find-actions">
+              <button type="button" class="secondary-btn" id="agent-rehighlight-btn">Highlight again</button>
+            </div>
+          </div>
+
+          <div class="agent-divider">
+            <span>or scan all elements</span>
+          </div>
+
+          <div class="action-row">
+            <button type="button" class="secondary-btn" id="agent-scan-btn">
+              Scan all page elements
+            </button>
+          </div>
+
+          <div class="agent-controls-row" id="agent-controls-row" hidden>
+            <button type="button" class="secondary-btn" id="agent-toggle-badges-btn">Toggle badges</button>
+            <button type="button" class="secondary-btn" id="agent-clear-badges-btn">Clear badges</button>
+          </div>
+
+          <div id="agent-status" class="agent-status" hidden></div>
+
+          <div id="agent-elements-container" class="agent-elements-container" hidden>
+            <div class="agent-elements-header">
+              <span class="section-label">Interactive elements</span>
+              <span id="agent-elements-count" class="agent-count-badge">0</span>
+            </div>
+            <div id="agent-elements-list" class="agent-elements-list"></div>
+          </div>
+        </section>
+
+        <!-- ── Settings view (inline, no separate tab) ──────────────────── -->
+        <section id="view-settings" class="view settings-view" data-view="settings" hidden>
+
+          <div class="settings-header">
+            <button type="button" class="settings-back-btn" id="settings-back-btn" aria-label="Back to panel">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+              <span>Back</span>
+            </button>
+            <h2 class="settings-title">Settings</h2>
+            <p class="settings-sub">Keys stay on this device in Chrome storage. Never committed to git.</p>
+          </div>
+
+          <p id="settings-status" class="settings-status" hidden></p>
+
+          <form id="settings-form" class="settings-form">
+
+            <!-- API Keys -->
+            <div class="settings-section">
+              <p class="settings-section-label">API Keys</p>
+
+              <div class="settings-field">
+                <label for="s-gemini-key">
+                  <span class="provider-dot provider-dot--gemini"></span>
+                  Gemini API key
+                </label>
+                <input
+                  id="s-gemini-key"
+                  name="geminiApiKey"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="Paste key, then Save"
+                />
+                <p class="settings-hint" id="s-key-hint">Google AI Studio · free tier available</p>
+                <button type="button" class="settings-clear-btn" id="s-clear-gemini" hidden>Clear key</button>
+              </div>
+
+              <div class="settings-field">
+                <label for="s-groq-key">
+                  <span class="provider-dot provider-dot--groq"></span>
+                  Groq API key
+                </label>
+                <input
+                  id="s-groq-key"
+                  name="groqApiKey"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="Paste key, then Save"
+                />
+                <p class="settings-hint" id="s-groq-hint">console.groq.com · free tier available</p>
+                <button type="button" class="settings-clear-btn" id="s-clear-groq" hidden>Clear key</button>
+              </div>
+            </div>
+
+            <!-- Provider -->
+            <div class="settings-section">
+              <p class="settings-section-label">Active AI provider</p>
+              <div class="settings-choices">
+                <label class="settings-choice">
+                  <input type="radio" name="s-provider" id="s-provider-auto" value="auto" checked />
+                  <span><strong>Auto</strong> — Gemini first, Groq fallback</span>
+                </label>
+                <label class="settings-choice">
+                  <input type="radio" name="s-provider" id="s-provider-gemini" value="gemini" />
+                  <span><strong>Gemini only</strong> — required for vision &amp; YouTube</span>
+                </label>
+                <label class="settings-choice">
+                  <input type="radio" name="s-provider" id="s-provider-groq" value="groq" />
+                  <span><strong>Groq only</strong> — text tasks only</span>
+                </label>
+              </div>
+              <div id="s-provider-status" class="settings-provider-status" hidden></div>
+            </div>
+
+            <!-- Language -->
+            <div class="settings-section">
+              <p class="settings-section-label">Default response language</p>
+              <div class="settings-choices">
+                <label class="settings-choice">
+                  <input type="radio" name="s-language" id="s-lang-en" value="en" checked />
+                  English
+                </label>
+                <label class="settings-choice">
+                  <input type="radio" name="s-language" id="s-lang-hinglish" value="hinglish" />
+                  Hinglish
+                </label>
+              </div>
+            </div>
+
+            <!-- Translate target -->
+            <div class="settings-section">
+              <p class="settings-section-label">Translate target language</p>
+              <div class="settings-field">
+                <select id="s-translate-target" name="translateTarget" class="settings-select">
+                  <option value="hi">Hindi</option>
+                  <option value="ta">Tamil</option>
+                  <option value="te">Telugu</option>
+                  <option value="bn">Bengali</option>
+                  <option value="mr">Marathi</option>
+                  <option value="gu">Gujarati</option>
+                  <option value="fr">French</option>
+                  <option value="es">Spanish</option>
+                  <option value="de">German</option>
+                  <option value="ja">Japanese</option>
+                  <option value="zh">Chinese</option>
+                  <option value="ar">Arabic</option>
+                  <option value="pt">Portuguese</option>
+                  <option value="ru">Russian</option>
+                  <option value="ko">Korean</option>
+                </select>
+                <p class="settings-hint">Used by "Translate" in the right-click context menu.</p>
+              </div>
+            </div>
+
+            <div class="settings-actions">
+              <button type="submit" class="primary-btn" id="s-save-btn">Save settings</button>
+            </div>
+
+          </form>
+
         </section>
 
       </main>

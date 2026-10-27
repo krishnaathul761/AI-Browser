@@ -35,14 +35,26 @@
   ],
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
+      "matches": ["http://*/*", "https://*/*", "file:///*"],
       "js": [
         "lib/readability.js",
         "lib/readability-readerable.js",
         "content/extract.js",
+        "content/scanner.js",
+        "content/overlay.js",
+        "content/execute.js",
         "content/index.js"
       ],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "pages/practice/*",
+        "assets/*"
+      ],
+      "matches": ["<all_urls>"]
     }
   ],
   "content_security_policy": {

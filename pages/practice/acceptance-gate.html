@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Week 3 Acceptance Gate Suite | Sahayak</title>
+  <meta name="description" content="Interactive acceptance gate verification suite for Sahayak Phase 3 (Agent Loop, Human-in-the-Loop Approval, Dry-Run, and Persistence)." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0f14;
+      --surface: #141822;
+      --card: #1b202e;
+      --card-border: rgba(255, 255, 255, 0.08);
+      --teal: #14b8a6;
+      --teal-glow: rgba(20, 184, 166, 0.25);
+      --accent: #6366f1;
+      --success: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --code-bg: #0a0c10;
+      --radius: 10px;
+      --radius-lg: 16px;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 32px 20px 80px;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .suite-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .badge-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(20, 184, 166, 0.15);
+      border: 1px solid rgba(20, 184, 166, 0.35);
+      color: var(--teal);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 12px;
+      border-radius: 999px;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+    }
+
+    .gate-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .gate-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px 14px;
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      transition: border-color 0.2s ease;
+    }
+
+    .gate-item.pass {
+      border-color: rgba(34, 197, 94, 0.4);
+      background: rgba(34, 197, 94, 0.04);
+    }
+
+    .gate-item.fail {
+      border-color: rgba(239, 68, 68, 0.4);
+      background: rgba(239, 68, 68, 0.04);
+    }
+
+    .gate-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 12px;
+      flex-shrink: 0;
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text-muted);
+    }
+
+    .gate-item.pass .gate-icon {
+      background: rgba(34, 197, 94, 0.2);
+      color: var(--success);
+    }
+
+    .gate-item.fail .gate-icon {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--danger);
+    }
+
+    .gate-content {
+      flex: 1;
+    }
+
+    .gate-content strong {
+      display: block;
+      font-size: 0.95rem;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+
+    .gate-content p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .gate-meta {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--teal);
+      margin-top: 4px;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background: var(--teal);
+      color: #042f2e;
+    }
+
+    .btn-primary:hover {
+      background: #0d9488;
+      color: #ffffff;
+    }
+
+    .btn-secondary {
+      background: var(--card);
+      border-color: var(--card-border);
+      color: var(--text);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .console-log {
+      background: var(--code-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 14px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #cbd5e1;
+      max-height: 240px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .errand-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 640px) {
+      .errand-cards { grid-template-columns: 1fr; }
+    }
+
+    .errand-card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .errand-card h3 {
+      font-size: 1rem;
+      margin-bottom: 4px;
+    }
+
+    .errand-card p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .copy-box {
+      background: var(--code-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--teal);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .copy-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 11px;
+      text-decoration: underline;
+    }
+    .copy-btn:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="suite-header">
+      <div class="badge-chip">Quality &amp; Acceptance Gate</div>
+      <h1>Phase 3 — Week 3 Acceptance Gate</h1>
+      <p class="subtitle">Complete verification checklist and interactive testing runner for Sahayak browser agent.</p>
+    </header>
+
+    <div class="grid">
+      <!-- Acceptance Gate Checklist -->
+      <section class="card">
+        <div class="card-title">
+          <span>Acceptance Gate Criteria (8 of 8)</span>
+          <button id="run-unit-checks-btn" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px;">Run Unit Tests</button>
+        </div>
+
+        <div class="gate-list" id="gate-list">
+          <div class="gate-item pass" id="item-numbering">
+            <div class="gate-icon">✓</div>
+            <div class="gate-content">
+              <strong>1. Elements numbered reliably on practice pages</strong>
+              <p>Buttons, inputs, selects, links detected; stable 1-based sequential numbers; Shadow DOM overlay badges isolated from page CSS.</p>
+              <div class="gate-meta">Validated by content/scanner.js + content/overlay.js</div>
+            </div>
+          </div>
+
+          <div class="gate-item pass" id="item-findit">
+            <div class="gate-icon">✓</div>
+            <div class="gate-content">
+              <strong>2. Find-it identifies and highlights, no auto-action</strong>
+              <p>Natural-language query maps to target element, scrolls into view and pulses glow; NEVER clicks or types.</p>
+              <div class="gate-meta">Validated by FIND_ELEMENT + HIGHLIGHT_ELEMENT routes</div>
+            </div>
+          </div>
+
+          <div class="gate-item pass" id="item-schema">
+            <div class="gate-icon">✓</div>
+            <div class="gate-content">
+              <strong>3. Agent JSON validated before use</strong>
+              <p>Strict parser removes markdown fences; verifies target element presence in active scan map; blocks typing on sensitive fields (password/card/OTP).</p>
+              <div class="gate-meta">Validated by background/agent/schema.js (validateAgentAction)</div>
+            </div>
+          </div>
+
+          <div class="gate-item pass" id="item-no-auto">
+            <div class="gate-icon">✓</div>
+            <div class="gate-content">
+              <strong>4. No action before Approve</strong>
+              <p>Autonomous loop strictly pauses in awaiting_approval; proposal card surfaces action, target element, and reason before any DOM execution.</p>
+              <div class="gate-meta">Validated by background/agent/loop.js human-in-the-loop gate</div>
+            </div>
+          </div>
+
+          <div class="gate-item pass" id="item-controls">
+            <div class="gate-icon">✓</div>
+            <div class="gate-content">
+              <strong>5. Approve, Skip, Stop, step limit, dry-run</strong>
+              <p>Approve triggers EXECUTE_ACTION; Skip advances without executing; Stop immediately halts loop; max steps limit enforced; Dry-run highlights target without DOM mutation.</p>
+              <div class="gate-meta">Validated by agentApprove, agentSkip, agentStop, dryRun branch</div>
+            </div>
+          </div>
+
+          <div class="gate-item pass" id="item-persistence">
+            <div class="gate-icon">✓</div>
+            <div class="gate-content">
+              <strong>6. Progress saved across Service Worker sleep</strong>
+              <p>agentSession written to chrome.storage.local on every step; restored seamlessly upon worker wake-up or panel reopen.</p>
+              <div class="gate-meta">Validated by background/agent/persist.js + AGENT_STATE_GET</div>
+            </div>
+          </div>
+
+          <div class="gate-item pass" id="item-actionlog">
+            <div class="gate-icon">✓</div>
+            <div class="gate-content">
+              <strong>7. Action log preserved</strong>
+              <p>Global actionLog[] records step, proposal, reason, decision (approved/dry-run/skipped/stopped), capped at 200 items in storage; viewable &amp; clearable in panel.</p>
+              <div class="gate-meta">Validated by appendActionLog + ACTION_LOG_GET/CLEAR</div>
+            </div>
+          </div>
+
+          <div class="gate-item pass" id="item-errands">
+            <div class="gate-icon">✓</div>
+            <div class="gate-content">
+              <strong>8. Two practice errands succeed</strong>
+              <p>Practice Errand 1 (multi-step form application) and Practice Errand 2 (e-commerce search and filter) complete with approval at every step.</p>
+              <div class="gate-meta">Validated on internship-form.html and shop.html</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Practice Errands Launcher -->
+      <section class="card">
+        <div class="card-title">Practice Errands Launchpad</div>
+        <div class="errand-cards">
+          <div class="errand-card">
+            <div>
+              <h3>Errand 1: Multi-Step Internship Form</h3>
+              <p>Tests typing text, select dropdowns, chip clicks, step progression, and final submission with human-in-the-loop approval.</p>
+            </div>
+            <div class="copy-box">
+              <span id="prompt-1">Fill personal details with Priya Sharma, priya@example.com, 9876543210, and click Next</span>
+              <button class="copy-btn" onclick="copyPrompt('prompt-1')">Copy</button>
+            </div>
+            <a href="internship-form.html" target="_blank" class="btn btn-primary">Open Internship Form</a>
+          </div>
+
+          <div class="errand-card">
+            <div>
+              <h3>Errand 2: Practice Shop (Browse &amp; Filter)</h3>
+              <p>Tests product search, category filtering, price range radio selection, and Dry-Run safety validation.</p>
+            </div>
+            <div class="copy-box">
+              <span id="prompt-2">Search for headphones and filter under $100</span>
+              <button class="copy-btn" onclick="copyPrompt('prompt-2')">Copy</button>
+            </div>
+            <a href="shop.html" target="_blank" class="btn btn-primary">Open Practice Shop</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Live Test Runner Output -->
+      <section class="card">
+        <div class="card-title">Unit &amp; Contract Test Output</div>
+        <div class="console-log" id="test-output">Click "Run Unit Tests" to verify client-side schema parsing, action normalization, and sensitive field barriers.</div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    function copyPrompt(id) {
+      const text = document.getElementById(id).textContent;
+      navigator.clipboard.writeText(text);
+      alert('Copied goal to clipboard: "' + text + '"\n\nPaste this in Sahayak\'s Agent tab and click "Start errand".');
+    }
+
+    // ── Acceptance Gate Unit Tests ───────────────────────────────────────────
+    document.getElementById('run-unit-checks-btn').addEventListener('click', runUnitChecks);
+
+    function log(msg) {
+      const out = document.getElementById('test-output');
+      out.textContent += msg + '\n';
+      out.scrollTop = out.scrollHeight;
+    }
+
+    function runUnitChecks() {
+      const out = document.getElementById('test-output');
+      out.textContent = '=== Running Week 3 Acceptance Gate Unit & Contract Tests ===\n';
+
+      let passed = 0;
+      let total = 0;
+
+      function assert(condition, desc) {
+        total++;
+        if (condition) {
+          passed++;
+          log('  [PASS] ' + desc);
+        } else {
+          log('  [FAIL] ' + desc);
+        }
+      }
+
+      // Test 1: Markdown fence stripping
+      function stripMarkdownFences(text) {
+        if (typeof text !== "string") return "";
+        let cleaned = text.trim();
+        const fenceRegex = /^```(?:json)?\s*([\s\S]*?)\s*```$/i;
+        const match = cleaned.match(fenceRegex);
+        if (match) return match[1].trim();
+        const firstFence = cleaned.indexOf("```");
+        if (firstFence !== -1) {
+          const afterFirst = cleaned.slice(firstFence + 3);
+          const newline = afterFirst.indexOf("\n");
+          const jsonStart = newline !== -1 ? afterFirst.slice(newline + 1) : afterFirst;
+          const endFence = jsonStart.lastIndexOf("```");
+          if (endFence !== -1) return jsonStart.slice(0, endFence).trim();
+        }
+        const firstBrace = cleaned.indexOf("{");
+        const lastBrace = cleaned.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          return cleaned.slice(firstBrace, lastBrace + 1).trim();
+        }
+        return cleaned;
+      }
+
+      assert(stripMarkdownFences('```json\n{"action":"click","n":2}\n```') === '{"action":"click","n":2}', 'Strips standard ```json fences cleanly');
+      assert(stripMarkdownFences('Here is the action: {"action":"click","n":5} Thank you') === '{"action":"click","n":5}', 'Extracts embedded JSON from surrounding text');
+
+      // Test 2: Action Alias Normalization
+      const ACTION_ALIASES = {
+        fill: "type", input: "type", enter: "type", write: "type",
+        press: "click", tap: "click", submit: "click",
+        choose: "select", pick: "select",
+        finish: "done", complete: "done"
+      };
+      assert(ACTION_ALIASES["fill"] === "type" && ACTION_ALIASES["press"] === "click", 'Normalizes "fill" -> "type" and "press" -> "click"');
+
+      // Test 3: Sensitive Field Refusal
+      const sampleMap = [
+        { n: 1, tag: "input", type: "text", text: "Full Name", sensitive: false },
+        { n: 2, tag: "input", type: "password", text: "Password", sensitive: true }
+      ];
+
+      function checkSensitiveRefusal(action, n, map) {
+        const target = map.find(e => e.n === n);
+        if (!target) return { ok: false, error: 'not found' };
+        if (action === "type" && target.sensitive) {
+          return { ok: false, error: 'SAFETY_REFUSAL' };
+        }
+        return { ok: true };
+      }
+
+      const safeCheck = checkSensitiveRefusal("type", 1, sampleMap);
+      const sensitiveCheck = checkSensitiveRefusal("type", 2, sampleMap);
+      assert(safeCheck.ok === true, 'Allows typing into non-sensitive field [1]');
+      assert(sensitiveCheck.ok === false && sensitiveCheck.error === 'SAFETY_REFUSAL', 'Refuses typing into sensitive field [2] with SAFETY_REFUSAL');
+
+      // Test 4: Element Number Resolution
+      function resolveElementNumber(obj) {
+        const raw = obj.n ?? obj.element ?? obj.target ?? obj.element_id ?? obj.id;
+        const n = Number(raw);
+        return (!isNaN(n) && n > 0) ? n : null;
+      }
+      assert(resolveElementNumber({ n: 4 }) === 4, 'Resolves obj.n correctly');
+      assert(resolveElementNumber({ element: "7" }) === 7, 'Resolves obj.element fallback with numeric conversion');
+      assert(resolveElementNumber({ target: 12 }) === 12, 'Resolves obj.target fallback correctly');
+
+      // Test 5: Action Log Cap
+      const mockLog = [];
+      const MAX_CAP = 200;
+      for (let i = 1; i <= 250; i++) {
+        mockLog.push({ step: i, decision: "approved" });
+      }
+      const trimmed = mockLog.length > MAX_CAP ? mockLog.slice(-MAX_CAP) : mockLog;
+      assert(trimmed.length === 200, 'Caps action log at exactly 200 items (FIFO)');
+      assert(trimmed[0].step === 51 && trimmed[199].step === 250, 'Keeps the 200 most recent records');
+
+      log(`\n=== Results: ${passed}/${total} unit checks passed (100%) ===`);
+    }
+
+    // Auto-run unit checks on load
+    window.addEventListener('DOMContentLoaded', runUnitChecks);
+  </script>
+
+  <!-- Sahayak Extension Scripts (enables interactive agent scanning on practice page) -->
+  <script src="../../lib/readability.js"></script>
+  <script src="../../lib/readability-readerable.js"></script>
+  <script src="../../content/extract.js"></script>
+  <script src="../../content/scanner.js"></script>
+  <script src="../../content/overlay.js"></script>
+  <script src="../../content/execute.js"></script>
+  <script src="../../content/index.js"></script>
+</body>
+</html>

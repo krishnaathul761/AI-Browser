@@ -43,6 +43,7 @@ function apiError(code, message, status) {
 
 const RETRY_DELAYS_MS = [1000, 2000, 4000]; // base delays before each retry
 const JITTER_MS       = 200;                // ± random jitter added to each delay
+const REQUEST_TIMEOUT_MS = 25000;          // 25s timeout per request attempt
 
 /**
  * True when an HTTP status code is worth retrying.
@@ -122,9 +123,13 @@ async function withRetry(fetchFn, parseFn) {
       }
 
     } catch (err) {
-      // Network error — retryable.
+      // Network error / timeout — retryable.
       if (err.code !== "API_ERROR" && err.code !== "BAD_RESPONSE" && err.code !== "MISSING_KEY") {
-        lastErr = apiError("NETWORK_ERROR", "Network request to Gemini failed: " + (err.message || "unknown"));
+        const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
+        const msg = isTimeout
+          ? "Request to Gemini timed out after " + (REQUEST_TIMEOUT_MS / 1000) + "s."
+          : "Network request to Gemini failed: " + (err.message || "unknown");
+        lastErr = apiError("NETWORK_ERROR", msg);
         if (attempt < RETRY_DELAYS_MS.length) {
           await new Promise((r) => setTimeout(r, retryDelay(attempt, null)));
           continue;
@@ -171,7 +176,12 @@ async function generateContent(model, prompt, apiKey, maxTokens) {
   const bodyStr = JSON.stringify(body);
 
   return withRetry(
-    () => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: bodyStr }),
+    () => fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: bodyStr,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    }),
     (json) => {
       const text = json.candidates[0].content.parts[0].text;
       if (typeof text !== "string" || !text) throw new Error("no text");
@@ -217,7 +227,7 @@ async function generateContentWithVideo(model, videoUrl, prompt, apiKey, maxToke
     contents: [{
       role: "user",
       parts: [
-        { file_data: { file_uri: videoUrl } },
+        { fileData: { mimeType: "video/*", fileUri: videoUrl } },
         { text: prompt },
       ],
     }],
@@ -230,7 +240,12 @@ async function generateContentWithVideo(model, videoUrl, prompt, apiKey, maxToke
   const bodyStr = JSON.stringify(body);
 
   return withRetry(
-    () => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: bodyStr }),
+    () => fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: bodyStr,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    }),
     (json) => {
       const text = json.candidates[0].content.parts[0].text;
       if (typeof text !== "string" || !text) throw new Error("no text");
@@ -280,7 +295,12 @@ async function generateContentWithImage(model, prompt, base64, mimeType, apiKey,
   const bodyStr = JSON.stringify(body);
 
   return withRetry(
-    () => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: bodyStr }),
+    () => fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: bodyStr,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    }),
     (json) => {
       const text = json.candidates[0].content.parts[0].text;
       if (typeof text !== "string" || !text) throw new Error("no text");
