@@ -251,7 +251,21 @@
         };
       }
 
-      const textValue = String(value != null ? value : "");
+      let textValue = String(value != null ? value : "");
+
+      // Normalize CGPA / Percentage input if user/model provides "8.5 / 10" or "9.0/10" or "85%"
+      const fieldDesc = `${el.name || ""} ${el.id || ""} ${(entry && entry.actionElement && entry.actionElement.text) || ""}`;
+      if (/cgpa|gpa|percentage|marks/i.test(fieldDesc)) {
+        const slashMatch = textValue.match(/^\s*(\d+(?:\.\d+)?)\s*\/\s*10(?:\.0)?\s*$/i);
+        if (slashMatch) {
+          textValue = slashMatch[1];
+        } else {
+          const pctMatch = textValue.match(/^\s*(\d+(?:\.\d+)?)\s*%\s*$/);
+          if (pctMatch) {
+            textValue = pctMatch[1];
+          }
+        }
+      }
 
       try {
         el.focus();

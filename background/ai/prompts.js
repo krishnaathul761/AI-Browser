@@ -436,6 +436,7 @@ function buildAgentStepPrompt(goal, history, elements, language, profile) {
         "- Use College for college/university inputs, Skills for skills/experience/domain, and Links for portfolio/website/github/linkedin.\n" +
         "- For Degree, Year, or Domain selects: choose a matching option directly from the element's [SELECT OPTIONS] (e.g. 'btech', '3', 'swe').\n" +
         "- For skill chips (e.g. Python, React): click 1-3 chips matching user skills. Do NOT click chips marked [ALREADY SELECTED]. Once selected, move to the next field or click Next.\n" +
+        "- For CGPA / Percentage fields: Enter a clean single number (e.g. '8.5' or '9.0' or '85'), NEVER append '/ 10' or '/10' or '%'.\n" +
         "- When the user's goal mentions 'from my profile' or asks to fill a form, always draw field values from this profile instead of using placeholder or made-up data.";
     }
   }
@@ -472,10 +473,12 @@ function buildAgentStepPrompt(goal, history, elements, language, profile) {
     "   - Once at least 1-2 chips are [ALREADY SELECTED], stop clicking chips and immediately proceed to the next input or click Next / Submit.\n" +
     "6. Progress Forward (Avoid Loops):\n" +
     "   - If an input or dropdown already has the desired value, do not repeat the action; proceed to the next uncompleted field or next step button.\n" +
-    "7. Safety Rules:\n" +
+    "7. Numeric & CGPA Fields:\n" +
+    "   - For CGPA, GPA, or percentage fields, enter ONLY the plain number (e.g. \"8.8\" or \"90\"). NEVER include \"/ 10\", \"/10\", or \"%\" in the value.\n" +
+    "8. Safety Rules:\n" +
     "   - NEVER propose typing into [SENSITIVE] elements (passwords, PINs, card numbers).\n" +
     '   - If all steps are complete or the goal is achieved, return action "done".\n' +
-    "8. Return ONLY a single raw JSON object starting with { and ending with }. No markdown fences. No other text.\n\n" +
+    "9. Return ONLY a single raw JSON object starting with { and ending with }. No markdown fences. No other text.\n\n" +
     languageSuffix(language)
   );
 }
