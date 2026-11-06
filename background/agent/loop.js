@@ -137,9 +137,10 @@ async function advanceAgentStep(session) {
     return session;
   }
 
-  if (isRestrictedUrl(tabUrl)) {
+  const safety = typeof checkPageSafety === "function" ? checkPageSafety(tabUrl) : { blocked: isRestrictedUrl(tabUrl) };
+  if (safety.blocked) {
     session.status = "error";
-    session.lastError = "RESTRICTED_PAGE: Agent automation is blocked on restricted browser or payment pages.";
+    session.lastError = `RESTRICTED_PAGE: ${safety.reason || "Agent automation is blocked on restricted browser or payment pages."}`;
     await persistAgentSession();
     return session;
   }
@@ -181,7 +182,8 @@ async function advanceAgentStep(session) {
 
   // 4. Construct prompt and query AI model
   const settings = await readSettings();
-  const prompt = buildAgentStepPrompt(session.goal, session.history, elements, settings.language);
+  const profile = typeof readProfile === "function" ? await readProfile() : null;
+  const prompt = buildAgentStepPrompt(session.goal, session.history, elements, settings.language, profile);
 
   console.log(`[Sahayak Agent] Querying AI model for Step ${session.step + 1} (${elements.length} elements)...`);
   let rawResponse;
@@ -287,6 +289,18 @@ async function agentStart(goal, tabId, maxSteps = 20, dryRun = undefined) {
     throw new Error("No active tab found.");
   }
 
+  let tabUrl = "";
+  try {
+    const tab = await chrome.tabs.get(resolvedTabId);
+    tabUrl = (tab && tab.url) || "";
+  } catch (_e) {}
+
+  const safety = typeof checkPageSafety === "function" ? checkPageSafety(tabUrl) : { blocked: isRestrictedUrl(tabUrl) };
+  if (safety.blocked) {
+    const reason = safety.reason || "Agent automation is blocked on restricted browser or payment pages.";
+    throw new Error(`RESTRICTED_PAGE: ${reason}`);
+  }
+
   const settings = await readSettings();
   const limit = Number.isInteger(maxSteps) && maxSteps > 0 ? maxSteps : settings.maxAgentSteps || 20;
   const isDryRun = typeof dryRun === "boolean" ? dryRun : Boolean(settings.dryRunDefault);
@@ -326,6 +340,19 @@ async function agentApprove() {
   const proposal = activeAgentSession.currentProposal || activeAgentSession.pendingProposal;
   if (activeAgentSession.status !== "awaiting_approval" || !proposal) {
     throw new Error("No action is currently awaiting approval.");
+  }
+
+  // Safety gate: Deterministic code barrier against typing on sensitive fields
+  if (proposal.action === "type") {
+    const fieldCheck = typeof validateFieldAction === "function"
+      ? validateFieldAction(proposal.action, proposal.targetElement, proposal.value)
+      : { ok: true };
+    if (!fieldCheck.ok) {
+      activeAgentSession.status = "error";
+      activeAgentSession.lastError = fieldCheck.error;
+      await persistAgentSession();
+      throw new Error(fieldCheck.error);
+    }
   }
 
   let execResult;

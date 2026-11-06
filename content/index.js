@@ -13,9 +13,10 @@
  */
 
 if (!window.__sahayakMessageListenerRegistered) {
-  window.__sahayakMessageListenerRegistered = true;
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
+    window.__sahayakMessageListenerRegistered = true;
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (!message || !message.type) {
       return false;
     }
@@ -138,4 +139,5 @@ if (!window.__sahayakMessageListenerRegistered) {
 
   return false;
 });
+  }
 }

@@ -1,8 +1,13 @@
+// --- Storage ---
 const SETTINGS_STORAGE_KEY = "settings";
+const PROFILE_STORAGE_KEY = "profile";
 
 const DEFAULT_SETTINGS = {
   geminiApiKey: "",
   groqApiKey: "",
+  mem0ApiKey: "",
+  mem0UserId: "sahayak_user",
+  mem0Enabled: false,
   language: "en",
   translateTarget: "hi",
   dryRunDefault: false,
@@ -13,6 +18,9 @@ const DEFAULT_SETTINGS = {
 const SETTINGS_FIELDS = [
   "geminiApiKey",
   "groqApiKey",
+  "mem0ApiKey",
+  "mem0UserId",
+  "mem0Enabled",
   "language",
   "translateTarget",
   "dryRunDefault",
@@ -36,6 +44,17 @@ function normalizeSettings(raw) {
   }
   if (typeof raw.groqApiKey === "string") {
     next.groqApiKey = raw.groqApiKey.trim();
+  }
+  if (typeof raw.mem0ApiKey === "string") {
+    next.mem0ApiKey = raw.mem0ApiKey.trim();
+  }
+  if (typeof raw.mem0UserId === "string" && raw.mem0UserId.trim()) {
+    next.mem0UserId = raw.mem0UserId.trim();
+  }
+  if (typeof raw.mem0Enabled === "boolean") {
+    next.mem0Enabled = raw.mem0Enabled;
+  } else if (next.mem0ApiKey) {
+    next.mem0Enabled = true;
   }
   if (raw.language === "en" || raw.language === "hinglish") {
     next.language = raw.language;
@@ -95,6 +114,328 @@ async function writeSettings(payload) {
   return next;
 }
 
+const DEFAULT_PROFILE = {
+  name: "",
+  college: "",
+  skills: "",
+  links: "",
+  preferredLanguage: "en",
+  preferredTone: "professional",
+};
+
+const PROFILE_FIELDS = [
+  "name",
+  "college",
+  "skills",
+  "links",
+  "preferredLanguage",
+  "preferredTone",
+];
+
+function normalizeProfile(raw) {
+  if (!isPlainObject(raw)) {
+    return Object.assign({}, DEFAULT_PROFILE);
+  }
+
+  const next = Object.assign({}, DEFAULT_PROFILE);
+
+  if (typeof raw.name === "string") {
+    next.name = raw.name.trim();
+  }
+  if (typeof raw.college === "string") {
+    next.college = raw.college.trim();
+  }
+  if (typeof raw.skills === "string") {
+    next.skills = raw.skills.trim();
+  }
+  if (typeof raw.links === "string") {
+    next.links = raw.links.trim();
+  }
+  if (raw.preferredLanguage === "en" || raw.preferredLanguage === "hinglish") {
+    next.preferredLanguage = raw.preferredLanguage;
+  }
+  if (typeof raw.preferredTone === "string" && raw.preferredTone.trim()) {
+    next.preferredTone = raw.preferredTone.trim();
+  }
+
+  return next;
+}
+
+async function readProfile() {
+  const bag = await chrome.storage.local.get(PROFILE_STORAGE_KEY);
+  const stored = bag[PROFILE_STORAGE_KEY];
+
+  if (stored === undefined) {
+    return Object.assign({}, DEFAULT_PROFILE);
+  }
+
+  if (!isPlainObject(stored)) {
+    const defaults = Object.assign({}, DEFAULT_PROFILE);
+    await chrome.storage.local.set({ [PROFILE_STORAGE_KEY]: defaults });
+    return defaults;
+  }
+
+  return normalizeProfile(stored);
+}
+
+function pickKnownProfile(payload) {
+  const patch = {};
+  if (!isPlainObject(payload)) {
+    return patch;
+  }
+  for (let i = 0; i < PROFILE_FIELDS.length; i += 1) {
+    const key = PROFILE_FIELDS[i];
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      patch[key] = payload[key];
+    }
+  }
+  return patch;
+}
+
+async function writeProfile(payload) {
+  const current = await readProfile();
+  const patch = pickKnownProfile(payload);
+  const next = normalizeProfile(Object.assign({}, current, patch));
+  await chrome.storage.local.set({ [PROFILE_STORAGE_KEY]: next });
+  return next;
+}
+
+const SKILLS_STORAGE_KEY = "skills";
+
+const DEFAULT_SKILLS = [
+  {
+    id: "skill-exam-notes",
+    name: "Exam notes",
+    prompt: "Create structured exam/study notes from this page with core concepts, bullet points, key definitions, and review questions.",
+    target: "summarise",
+    builtin: true,
+    createdAt: 1700000000000,
+  },
+  {
+    id: "skill-hinglish-summary",
+    name: "Explain in Hinglish",
+    prompt: "Summarise the main ideas of this page in simple Hinglish (conversational Hindi written in Latin script with English).",
+    target: "summarise",
+    builtin: true,
+    createdAt: 1700000000001,
+  },
+  {
+    id: "skill-reply-politely",
+    name: "Reply to this email politely",
+    prompt: "Draft a polite, professional, and courteous reply to this email or message, incorporating my profile tone and details.",
+    target: "chat",
+    builtin: true,
+    createdAt: 1700000000002,
+  },
+  {
+    id: "skill-fill-profile",
+    name: "Fill this form from my profile",
+    prompt: "Fill this form from my profile memory (name, college, skills, links)",
+    target: "agent",
+    builtin: true,
+    createdAt: 1700000000003,
+  },
+  {
+    id: "skill-key-takeaways",
+    name: "Key takeaways only",
+    prompt: "Extract the top 5 most important takeaways and actionable learnings from this page as concise bullet points.",
+    target: "summarise",
+    builtin: true,
+    createdAt: 1700000000004,
+  },
+  {
+    id: "skill-critique",
+    name: "Critique & fact-check",
+    prompt: "Critique the arguments and claims on this page. Identify any weak logic, unverified assumptions, or counter-perspectives.",
+    target: "chat",
+    builtin: true,
+    createdAt: 1700000000005,
+  },
+  {
+    id: "skill-action-items",
+    name: "Extract action items",
+    prompt: "Analyze this page and extract all concrete action items, next steps, dates, deadlines, and requirements into a checklist.",
+    target: "chat",
+    builtin: true,
+    createdAt: 1700000000006,
+  },
+  {
+    id: "skill-eli5",
+    name: "Explain like I'm 5",
+    prompt: "Explain the main concepts of this page in very simple terms using clear, relatable analogies.",
+    target: "chat",
+    builtin: true,
+    createdAt: 1700000000007,
+  },
+  {
+    id: "skill-shop-filter",
+    name: "Search & filter shop",
+    prompt: "Search for items on this page and apply the lowest price or best rated filter",
+    target: "agent",
+    builtin: true,
+    createdAt: 1700000000008,
+  },
+];
+
+const BLOCKED_SKILL_KEYWORDS = [
+  "login", "log in", "signin", "sign in", "password", "passcode",
+  "credit card", "debit card", "cvv", "otp", "one-time password",
+  "upi pin", "bank account", "payment gateway", "transfer money", "pay now"
+];
+
+function validateSkillSafety(skill) {
+  const combined = ((skill && skill.name || "") + " " + (skill && skill.prompt || "")).toLowerCase();
+  for (let i = 0; i < BLOCKED_SKILL_KEYWORDS.length; i += 1) {
+    const word = BLOCKED_SKILL_KEYWORDS[i];
+    if (combined.includes(word)) {
+      return {
+        ok: false,
+        error: `Skill blocked by safety rails: cannot automate login, passwords, OTP, or payments (matched "${word}").`
+      };
+    }
+  }
+  return { ok: true };
+}
+
+async function readSkills() {
+  const bag = await chrome.storage.local.get(SKILLS_STORAGE_KEY);
+  const stored = bag[SKILLS_STORAGE_KEY];
+
+  if (stored === undefined) {
+    await chrome.storage.local.set({ [SKILLS_STORAGE_KEY]: DEFAULT_SKILLS });
+    return DEFAULT_SKILLS.slice();
+  }
+
+  if (!Array.isArray(stored)) {
+    await chrome.storage.local.set({ [SKILLS_STORAGE_KEY]: DEFAULT_SKILLS });
+    return DEFAULT_SKILLS.slice();
+  }
+
+  return stored;
+}
+
+async function saveSkill(payload) {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Invalid skill payload");
+  }
+  const name = typeof payload.name === "string" ? payload.name.trim() : "";
+  const prompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
+  const target = ["summarise", "chat", "agent"].includes(payload.target) ? payload.target : "chat";
+
+  if (!name) {
+    throw new Error("Skill name is required");
+  }
+  if (!prompt) {
+    throw new Error("Skill prompt is required");
+  }
+
+  const safetyCheck = validateSkillSafety({ name, prompt });
+  if (!safetyCheck.ok) {
+    throw new Error(safetyCheck.error);
+  }
+
+  const current = await readSkills();
+  const id = payload.id || ("skill-" + uuid().slice(0, 8));
+
+  const existingIdx = current.findIndex((s) => s.id === id);
+  const skillItem = {
+    id,
+    name,
+    prompt,
+    target,
+    useProfile: Boolean(payload.useProfile),
+    builtin: Boolean(payload.builtin),
+    createdAt: payload.createdAt || Date.now(),
+  };
+
+  if (existingIdx !== -1) {
+    current[existingIdx] = Object.assign({}, current[existingIdx], skillItem);
+  } else {
+    current.push(skillItem);
+  }
+
+  await chrome.storage.local.set({ [SKILLS_STORAGE_KEY]: current });
+  return current;
+}
+
+async function deleteSkill(id) {
+  if (!id) return await readSkills();
+  const current = await readSkills();
+  const next = current.filter((s) => s.id !== id);
+  await chrome.storage.local.set({ [SKILLS_STORAGE_KEY]: next });
+  return next;
+}
+
+async function clearSkills() {
+  await chrome.storage.local.set({ [SKILLS_STORAGE_KEY]: [] });
+  return [];
+}
+
+async function importSkills(skillsArray) {
+  if (!Array.isArray(skillsArray)) {
+    throw new Error("Invalid format: JSON file must contain an array of skills.");
+  }
+  if (skillsArray.length === 0) {
+    throw new Error("Invalid format: JSON file contains an empty skills array.");
+  }
+
+  // Validate items strictly according to schema { id?, name, prompt }
+  const validItems = [];
+  for (let i = 0; i < skillsArray.length; i += 1) {
+    const item = skillsArray[i];
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    const prompt = typeof item.prompt === "string" ? item.prompt.trim() : "";
+    if (!name || !prompt) continue;
+
+    const safety = validateSkillSafety({ name, prompt });
+    if (!safety.ok) {
+      throw new Error(`Import rejected: skill "${name}" violates safety rules (${safety.error}).`);
+    }
+
+    const target = ["summarise", "chat", "agent"].includes(item.target) ? item.target : "chat";
+    const id = (typeof item.id === "string" && item.id.trim()) ? item.id.trim() : ("skill-" + uuid().slice(0, 8));
+
+    validItems.push({
+      id,
+      name,
+      prompt,
+      target,
+      useProfile: Boolean(item.useProfile),
+      builtin: Boolean(item.builtin),
+      createdAt: typeof item.createdAt === "number" ? item.createdAt : Date.now(),
+    });
+  }
+
+  if (validItems.length === 0) {
+    throw new Error("Invalid skill import: no valid skills found with required { name, prompt } schema.");
+  }
+
+  const current = await readSkills();
+  let addedCount = 0;
+  let updatedCount = 0;
+
+  for (let i = 0; i < validItems.length; i += 1) {
+    const valid = validItems[i];
+    const existingIdx = current.findIndex((s) => s.id === valid.id || s.name.toLowerCase() === valid.name.toLowerCase());
+    if (existingIdx === -1) {
+      current.push(valid);
+      addedCount += 1;
+    } else {
+      current[existingIdx] = Object.assign({}, current[existingIdx], valid);
+      updatedCount += 1;
+    }
+  }
+
+  await chrome.storage.local.set({ [SKILLS_STORAGE_KEY]: current });
+  return { skills: current, addedCount, updatedCount };
+}
+
+async function resetSkills() {
+  await chrome.storage.local.set({ [SKILLS_STORAGE_KEY]: DEFAULT_SKILLS });
+  return DEFAULT_SKILLS.slice();
+}
+
 function fail(requestId, error) {
   return { ok: false, requestId: requestId, error: error };
 }
@@ -117,6 +458,94 @@ async function routeMessage(message, _sender) {
 
     case "SETTINGS_SET":
       return ok(requestId, await writeSettings(message.payload));
+
+    case "PROFILE_GET":
+      return ok(requestId, await readProfile());
+
+    case "PROFILE_SET":
+      return ok(requestId, await writeProfile(message.payload));
+
+    case "SKILLS_GET":
+      return ok(requestId, await readSkills());
+
+    case "SKILL_SAVE": {
+      try {
+        const savedList = await saveSkill(message.payload);
+        return ok(requestId, savedList);
+      } catch (err) {
+        return fail(requestId, err.message || "Failed to save skill");
+      }
+    }
+
+    case "SKILL_DELETE":
+      return ok(requestId, await deleteSkill(message.payload && message.payload.id));
+
+    case "SKILLS_IMPORT": {
+      try {
+        const result = await importSkills(message.payload && message.payload.skills);
+        return ok(requestId, result);
+      } catch (err) {
+        return fail(requestId, err.message || "Failed to import skills");
+      }
+    }
+
+    case "SKILLS_RESET":
+      return ok(requestId, await resetSkills());
+
+    case "SKILLS_CLEAR":
+      return ok(requestId, await clearSkills());
+
+    case "MEM0_STATUS": {
+      const settings = await readSettings();
+      const hasKey = Boolean(settings.mem0ApiKey);
+      return ok(requestId, {
+        enabled: Boolean(settings.mem0Enabled && hasKey),
+        configured: hasKey,
+        userId: settings.mem0UserId || "sahayak_user",
+      });
+    }
+
+    case "MEM0_SEARCH": {
+      const settings = await readSettings();
+      if (!settings.mem0ApiKey) {
+        return ok(requestId, { memories: [] });
+      }
+      const query = (message.payload && message.payload.query) || "";
+      const res = await mem0SearchMemories({
+        apiKey: settings.mem0ApiKey,
+        userId: settings.mem0UserId,
+        query,
+      });
+      return ok(requestId, res);
+    }
+
+    case "MEM0_LIST": {
+      const settings = await readSettings();
+      if (!settings.mem0ApiKey) {
+        return ok(requestId, { memories: [] });
+      }
+      const res = await mem0ListMemories({
+        apiKey: settings.mem0ApiKey,
+        userId: settings.mem0UserId,
+      });
+      return ok(requestId, res);
+    }
+
+    case "MEM0_DELETE": {
+      const settings = await readSettings();
+      if (!settings.mem0ApiKey) {
+        return fail(requestId, "Mem0 API key not configured.");
+      }
+      const memoryId = message.payload && message.payload.id;
+      const res = await mem0DeleteMemory({
+        apiKey: settings.mem0ApiKey,
+        memoryId,
+      });
+      if (!res.ok) {
+        return fail(requestId, res.error || "Failed to delete memory.");
+      }
+      return ok(requestId, { deleted: true, id: memoryId });
+    }
 
     case "SELECTION_ACTION":
       return handleSelectionAction(requestId, message);
@@ -264,7 +693,9 @@ async function handleSelectionAction(requestId, message) {
     prompt = buildTranslateSelectionPrompt(selectionText.trim(), targetName, settings.language);
     maxTokens = 400; // roughly same length as input
   } else if (mode === "draft") {
-    prompt = buildDraftPrompt(selectionText.trim(), settings.language);
+    const profile = await readProfile();
+    const draftLang = settings.language || profile.preferredLanguage || "en";
+    prompt = buildDraftPrompt(selectionText.trim(), draftLang, profile);
     maxTokens = 200; // 2-4 sentences
   }
 
@@ -327,7 +758,8 @@ async function handleSummaryArticle(requestId, message) {
   } catch (_e) {}
 
   if (isRestrictedUrl(tabUrl)) {
-    return fail(requestId, "RESTRICTED_PAGE");
+    const reason = typeof getRestrictedPageReason === "function" ? getRestrictedPageReason(tabUrl) : "";
+    return fail(requestId, reason ? `RESTRICTED_PAGE: ${reason}` : "RESTRICTED_PAGE");
   }
 
   // ── Auto-detect YouTube and route to the YouTube handler ──────────────────
@@ -382,7 +814,8 @@ async function handleSummaryArticle(requestId, message) {
   // Always generate in English — the panel translates on demand.
   // This ensures the cache is always English and EN↔Hinglish toggles
   // always have a clean source to translate from.
-  const prompt = buildSummaryPrompt(trimmedArticle, "en");
+  const customSkillPrompt = payload && payload.skillPrompt ? payload.skillPrompt : null;
+  const prompt = buildSummaryPrompt(trimmedArticle, "en", customSkillPrompt);
 
   let rawText;
   try {
@@ -407,7 +840,7 @@ async function handleSummaryArticle(requestId, message) {
   };
 
   // Cache by tab URL — always in English so the toggle always has a clean source.
-  setCachedSummary(tabUrl, result).catch(() => {});
+  if (!customSkillPrompt) setCachedSummary(tabUrl, result).catch(() => {});
 
   return ok(requestId, result);
 }
@@ -470,6 +903,9 @@ function parseSummaryJson(raw) {
  */
 function isRestrictedUrl(url) {
   if (!url) return false;
+  if (typeof checkPageSafety === "function") {
+    return checkPageSafety(url).blocked;
+  }
   if (url.includes("/pages/practice/")) return false;
   return (
     url.startsWith("chrome://") ||
@@ -884,7 +1320,8 @@ async function handleChatSend(requestId, message) {
   } catch (_e) {}
 
   if (isRestrictedUrl(currentUrl)) {
-    return fail(requestId, "RESTRICTED_PAGE");
+    const reason = typeof getRestrictedPageReason === "function" ? getRestrictedPageReason(currentUrl) : "";
+    return fail(requestId, reason ? `RESTRICTED_PAGE: ${reason}` : "RESTRICTED_PAGE");
   }
 
   // ── Detect URL change ────────────────────────────────────────────────────
@@ -941,6 +1378,39 @@ async function handleChatSend(requestId, message) {
     return fail(requestId, "MISSING_KEY");
   }
 
+  // Retrieve relevant cross-session memories via Mem0 if configured
+  let retrievedMemories = [];
+  if (settings.mem0ApiKey && settings.mem0Enabled) {
+    try {
+      const isPastSessionQuery = /\b(previous|past|earlier|last|history|remember|remind|discussed|talked about|topics?)\b/i.test(userMessage);
+
+      const memRes = await mem0SearchMemories({
+        apiKey: settings.mem0ApiKey,
+        userId: settings.mem0UserId,
+        query: userMessage.trim(),
+        limit: 5,
+      });
+      if (memRes && memRes.ok && Array.isArray(memRes.memories) && memRes.memories.length > 0) {
+        retrievedMemories = memRes.memories;
+      }
+
+      // If user asks about past sessions or search found few items, fetch latest memories
+      if (isPastSessionQuery || retrievedMemories.length < 3) {
+        const listRes = await mem0ListMemories({
+          apiKey: settings.mem0ApiKey,
+          userId: settings.mem0UserId,
+        });
+        if (listRes && listRes.ok && Array.isArray(listRes.memories)) {
+          const existingIds = new Set(retrievedMemories.map((m) => m.id));
+          const additions = listRes.memories.filter((m) => !existingIds.has(m.id)).slice(0, 5);
+          retrievedMemories = retrievedMemories.concat(additions);
+        }
+      }
+    } catch (_memErr) {
+      // Best-effort; do not fail chat if Mem0 is unreachable
+    }
+  }
+
   // Build prompt with history.
   // Trim page text to 5k chars (~1.25k tokens) to stay within Groq's 8K TPM.
   const trimmedContext = Object.assign({}, pageContext, {
@@ -950,7 +1420,8 @@ async function handleChatSend(requestId, message) {
     trimmedContext,
     chat.messages.slice(-CHAT_MAX_HISTORY),
     userMessage.trim(),
-    settings.language
+    settings.language,
+    retrievedMemories
   );
 
   let reply;
@@ -958,6 +1429,18 @@ async function handleChatSend(requestId, message) {
     reply = await callAI({ model: GEMINI_FLASH_LITE, prompt, settings, maxTokens: 500 });
   } catch (err) {
     return fail(requestId, geminiErrorMessage(err));
+  }
+
+  // Asynchronously record turn to Mem0 in background (fire-and-forget)
+  if (settings.mem0ApiKey && settings.mem0Enabled) {
+    mem0AddMemories({
+      apiKey: settings.mem0ApiKey,
+      userId: settings.mem0UserId,
+      messages: [
+        { role: "user", content: userMessage.trim() },
+        { role: "assistant", content: reply.trim() },
+      ],
+    }).catch((e) => console.warn("Mem0 background add failed:", e));
   }
 
   // Append to history.
@@ -1024,7 +1507,8 @@ async function handleScreenshotCapture(requestId, message) {
   const tabUrl = targetTab.url || "";
 
   if (isRestrictedUrl(tabUrl)) {
-    return fail(requestId, "RESTRICTED_PAGE");
+    const reason = typeof getRestrictedPageReason === "function" ? getRestrictedPageReason(tabUrl) : "";
+    return fail(requestId, reason ? `RESTRICTED_PAGE: ${reason}` : "RESTRICTED_PAGE");
   }
 
   // captureVisibleTab called without windowId uses the last focused window.
@@ -1062,6 +1546,19 @@ async function handleScreenshotAsk(requestId, message) {
   const payload  = message && message.payload;
   const dataUrl  = payload && payload.dataUrl;
   const question = payload && payload.question;
+
+  // Gate: verify page safety before uploading/asking Gemini
+  let tabUrl = (payload && payload.tabUrl) || "";
+  if (!tabUrl) {
+    try {
+      const [curTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      tabUrl = (curTab && curTab.url) || "";
+    } catch (_e) {}
+  }
+  if (isRestrictedUrl(tabUrl)) {
+    const reason = typeof getRestrictedPageReason === "function" ? getRestrictedPageReason(tabUrl) : "";
+    return fail(requestId, reason ? `RESTRICTED_PAGE: ${reason}` : "RESTRICTED_PAGE: Screenshots of protected payment, banking, or internal pages cannot be uploaded or analysed.");
+  }
 
   if (!dataUrl || !dataUrl.startsWith("data:image/")) {
     return fail(requestId, "No screenshot to analyse. Capture the screen first.");
@@ -1145,7 +1642,8 @@ async function handleScanInteractive(requestId, message) {
   } catch (_e) {}
 
   if (isRestrictedUrl(tabUrl)) {
-    return fail(requestId, "RESTRICTED_PAGE");
+    const reason = typeof getRestrictedPageReason === "function" ? getRestrictedPageReason(tabUrl) : "";
+    return fail(requestId, reason ? `RESTRICTED_PAGE: ${reason}` : "RESTRICTED_PAGE");
   }
 
   try {
@@ -1255,7 +1753,8 @@ async function handleFindElement(requestId, message) {
   } catch (_e) {}
 
   if (isRestrictedUrl(tabUrl)) {
-    return fail(requestId, "RESTRICTED_PAGE");
+    const reason = typeof getRestrictedPageReason === "function" ? getRestrictedPageReason(tabUrl) : "";
+    return fail(requestId, reason ? `RESTRICTED_PAGE: ${reason}` : "RESTRICTED_PAGE");
   }
 
   const settings = await readSettings();

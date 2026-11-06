@@ -109,6 +109,11 @@ function switchToTab(tabName) {
   document.querySelectorAll(".view").forEach((view) => {
     view.hidden = view.getAttribute("data-view") !== tabName;
   });
+  if (tabName === "memory") {
+    loadProfileMemory().catch(() => {});
+    loadSkills().catch(() => {});
+    loadMem0Config().catch(() => {});
+  }
 }
 
 // Wire gear icon button to toggle
@@ -292,6 +297,9 @@ const sClearGemini    = document.getElementById("s-clear-gemini");
 const sGroqInput      = document.getElementById("s-groq-key");
 const sGroqHint       = document.getElementById("s-groq-hint");
 const sClearGroq      = document.getElementById("s-clear-groq");
+const sMem0Input      = document.getElementById("s-mem0-key");
+const sMem0Hint       = document.getElementById("s-mem0-hint");
+const sClearMem0      = document.getElementById("s-clear-mem0");
 const sTranslate      = document.getElementById("s-translate-target");
 const sStatusEl       = document.getElementById("settings-status");
 const sProviderStatus = document.getElementById("s-provider-status");
@@ -347,6 +355,17 @@ function applyInPanelSettings(settings) {
     : "console.groq.com · free tier available";
   if (sClearGroq) sClearGroq.hidden = !settings.groqApiKey;
 
+  if (sMem0Input) {
+    sMem0Input.value = "";
+    sMem0Input.placeholder = settings.mem0ApiKey ? "Key saved — paste to replace" : "Paste key, then Save";
+  }
+  if (sMem0Hint) {
+    sMem0Hint.textContent = settings.mem0ApiKey
+      ? "Key saved. Mem0 cross-session memory is active."
+      : "app.mem0.ai · cross-session memory";
+  }
+  if (sClearMem0) sClearMem0.hidden = !settings.mem0ApiKey;
+
   const provider = settings.preferredProvider || "auto";
   const providerRadio = sForm && sForm.querySelector('input[name="s-provider"][value="' + provider + '"]');
   if (providerRadio) providerRadio.checked = true;
@@ -394,6 +413,7 @@ async function clearSettingsKey(keyName) {
 
 if (sClearGemini) sClearGemini.addEventListener("click", () => clearSettingsKey("geminiApiKey"));
 if (sClearGroq)   sClearGroq.addEventListener("click",   () => clearSettingsKey("groqApiKey"));
+if (sClearMem0)   sClearMem0.addEventListener("click",   () => clearSettingsKey("mem0ApiKey"));
 
 // Save
 if (sForm) {
@@ -411,9 +431,12 @@ if (sForm) {
       if (newGemini) patch.geminiApiKey = newGemini;
       const newGroq = sGroqInput ? sGroqInput.value.trim() : "";
       if (newGroq) patch.groqApiKey = newGroq;
+      const newMem0 = sMem0Input ? sMem0Input.value.trim() : "";
+      if (newMem0) patch.mem0ApiKey = newMem0;
 
       const saved = await send("SETTINGS_SET", patch);
       applyInPanelSettings(saved);
+
       // Keep the topbar language toggle in sync.
       applyLanguage(saved.language || "en");
       setSettingsStatus("Settings saved.", "ok");
@@ -787,7 +810,7 @@ function buildYouTubeCopyText(data) {
 /**
  * Run SUMMARY_ARTICLE. Pass forceRefresh=true to bypass the cache.
  */
-async function runSummarise(forceRefresh) {
+async function runSummarise(forceRefresh, skillPrompt) {
   showBanner("");
   summaryArea.hidden = true;
   summaryArea.innerHTML = "";
@@ -795,12 +818,15 @@ async function runSummarise(forceRefresh) {
   summaryArea.hidden = false;
   const loadingDiv = document.createElement("div");
   loadingDiv.className = "loading-state";
-  loadingDiv.textContent = forceRefresh ? "Refreshing…" : "Summarising…";
+  loadingDiv.textContent = skillPrompt ? "Running skill…" : (forceRefresh ? "Refreshing…" : "Summarising…");
   summaryArea.appendChild(loadingDiv);
   summariseBtn.disabled = true;
 
   try {
-    const data = await send("SUMMARY_ARTICLE", { forceRefresh: forceRefresh === true });
+    const data = await send("SUMMARY_ARTICLE", {
+      forceRefresh: forceRefresh === true || Boolean(skillPrompt),
+      skillPrompt: skillPrompt || undefined,
+    });
     // Summary always comes back in English. Store it as originalData.
     // If the user has Hinglish selected, translate immediately.
     const settings = await send("SETTINGS_GET");
@@ -944,8 +970,8 @@ function clearChatUI() {
 }
 
 /** Send the current input as a chat message. */
-async function sendChatMessage() {
-  const text = chatInput.value.trim();
+async function sendChatMessage(overrideText) {
+  const text = (typeof overrideText === "string" ? overrideText : chatInput.value).trim();
   if (!text) return;
 
   chatInput.value = "";
@@ -1841,7 +1867,12 @@ const agentLogRefreshBtn = document.getElementById("agent-log-refresh-btn");
 const agentLogClearBtn = document.getElementById("agent-log-clear-btn");
 const agentLogList = document.getElementById("agent-log-list");
 
+let currentAgentSession = null;
+let awaitingConsequentialConfirm = false;
+
 function renderAgentSession(session) {
+  currentAgentSession = session;
+  awaitingConsequentialConfirm = false;
   console.log("[Sahayak Panel] renderAgentSession:", session ? session.status : "null", session);
   if (!session || session.status === "idle") {
     if (agentRunningCard) agentRunningCard.hidden = true;
@@ -1949,10 +1980,16 @@ function renderAgentSession(session) {
       }
       if (agentProposalWarning) {
         agentProposalWarning.hidden = !proposal.consequential;
+        if (proposal.consequential && proposal.consequentialReason) {
+          agentProposalWarning.textContent = `⚠️ Consequential action (${proposal.consequentialReason}) — requires secondary confirmation.`;
+        } else if (proposal.consequential) {
+          agentProposalWarning.textContent = "⚠️ Consequential action (Submit / Pay / Delete) — requires secondary confirmation.";
+        }
       }
 
       if (agentApproveBtn) {
         agentApproveBtn.disabled = false;
+        agentApproveBtn.classList.remove("btn-confirm-consequential");
         agentApproveBtn.textContent = session.dryRun ? "Approve (Dry Run)" : "Approve";
       }
       if (agentSkipBtn) agentSkipBtn.disabled = false;
@@ -2122,7 +2159,24 @@ if (agentStartBtn && agentGoalInput) {
 
 if (agentApproveBtn) {
   agentApproveBtn.addEventListener("click", async () => {
+    const session = currentAgentSession;
+    const proposal = session && (session.currentProposal || session.pendingProposal);
+
+    // Consequential action requires two-step confirmation before DOM execution
+    if (proposal && (proposal.consequential || proposal.requiresSecondConfirm) && !awaitingConsequentialConfirm) {
+      awaitingConsequentialConfirm = true;
+      agentApproveBtn.textContent = "Confirm Action?";
+      agentApproveBtn.classList.add("btn-confirm-consequential");
+      if (agentProposalWarning) {
+        agentProposalWarning.hidden = false;
+        agentProposalWarning.textContent = "⚠️ High-impact action (Submit / Pay / Delete). Click 'Confirm Action?' again to proceed.";
+      }
+      return;
+    }
+
+    awaitingConsequentialConfirm = false;
     agentApproveBtn.disabled = true;
+    agentApproveBtn.classList.remove("btn-confirm-consequential");
     if (agentSkipBtn) agentSkipBtn.disabled = true;
     if (agentStopBtn) agentStopBtn.disabled = true;
     if (agentProposalCard) agentProposalCard.hidden = true;
@@ -2131,8 +2185,8 @@ if (agentApproveBtn) {
       if (agentRunningLabel) agentRunningLabel.textContent = "Executing action & planning next step…";
     }
     try {
-      const session = await send("AGENT_APPROVE", {});
-      renderAgentSession(session);
+      const updated = await send("AGENT_APPROVE", {});
+      renderAgentSession(updated);
     } catch (err) {
       if (agentRunningCard) agentRunningCard.hidden = true;
       if (agentProposalCard) agentProposalCard.hidden = false;
@@ -2146,6 +2200,10 @@ if (agentApproveBtn) {
 
 if (agentSkipBtn) {
   agentSkipBtn.addEventListener("click", async () => {
+    awaitingConsequentialConfirm = false;
+    if (agentApproveBtn) {
+      agentApproveBtn.classList.remove("btn-confirm-consequential");
+    }
     agentSkipBtn.disabled = true;
     if (agentApproveBtn) agentApproveBtn.disabled = true;
     if (agentStopBtn) agentStopBtn.disabled = true;
@@ -2169,6 +2227,10 @@ if (agentSkipBtn) {
 }
 
 async function stopAgent() {
+  awaitingConsequentialConfirm = false;
+  if (agentApproveBtn) {
+    agentApproveBtn.classList.remove("btn-confirm-consequential");
+  }
   if (agentStopBtn) agentStopBtn.disabled = true;
   if (agentRunningStopBtn) agentRunningStopBtn.disabled = true;
   try {
@@ -2243,6 +2305,16 @@ if (globalThis.chrome && chrome.storage && chrome.storage.onChanged) {
     if (changes.actionLog) {
       refreshActionLog().catch(() => {});
     }
+
+    // Profile memory updated
+    if (changes.profile) {
+      loadProfileMemory().catch(() => {});
+    }
+
+    // Skills library updated
+    if (changes.skills) {
+      loadSkills().catch(() => {});
+    }
   });
 }
 
@@ -2252,3 +2324,592 @@ loadSettings().catch((err) => {
 
 syncAgentState().catch(() => {});
 refreshActionLog().catch(() => {});
+loadProfileMemory().catch(() => {});
+loadSkills().catch(() => {});
+
+// ── Memory & Skills Tab Controllers (Slice 4.1 & 4.2) ────────────────────────
+
+const memProfileForm = document.getElementById("mem-profile-form");
+const memName        = document.getElementById("mem-name");
+const memCollege     = document.getElementById("mem-college");
+const memSkills      = document.getElementById("mem-skills");
+const memLinks       = document.getElementById("mem-links");
+const memTone        = document.getElementById("mem-tone");
+const memLanguage    = document.getElementById("mem-language");
+const memStatusEl    = document.getElementById("mem-status");
+const memClearBtn    = document.getElementById("mem-clear-btn");
+
+const skillsCountBadge   = document.getElementById("skills-count-badge");
+const skillsExportBtn    = document.getElementById("skills-export-btn");
+const skillsImportFile   = document.getElementById("skills-import-file");
+const skillsClearBtn     = document.getElementById("skills-clear-btn");
+const skillsResetBtn     = document.getElementById("skills-reset-btn");
+const skillsAddToggleBtn = document.getElementById("skills-add-toggle-btn");
+const skillEditorCard    = document.getElementById("skill-editor-card");
+const skillIdInput       = document.getElementById("skill-id-input");
+const skillEditorTitle   = document.getElementById("skill-editor-title");
+const skillNameInput     = document.getElementById("skill-name-input");
+const skillTargetInput   = document.getElementById("skill-target-input");
+const skillPromptInput   = document.getElementById("skill-prompt-input");
+const skillSaveBtn       = document.getElementById("skill-save-btn");
+const skillCancelBtn     = document.getElementById("skill-cancel-btn");
+const skillUseProfileInput = document.getElementById("skill-use-profile");
+const skillsListEl       = document.getElementById("skills-list");
+const skillsStatusEl     = document.getElementById("skills-status");
+
+function setMemoryStatus(message, kind = "ok") {
+  if (!memStatusEl) return;
+  if (!message) {
+    memStatusEl.hidden = true;
+    memStatusEl.textContent = "";
+    return;
+  }
+  memStatusEl.hidden = false;
+  memStatusEl.textContent = message;
+  memStatusEl.className = "memory-status" + (kind === "err" ? " is-err" : "");
+  if (kind === "ok") setTimeout(() => setMemoryStatus(""), 3000);
+}
+
+function setSkillsStatus(message, kind = "ok") {
+  if (!skillsStatusEl) return;
+  if (!message) {
+    skillsStatusEl.hidden = true;
+    skillsStatusEl.textContent = "";
+    return;
+  }
+  skillsStatusEl.hidden = false;
+  skillsStatusEl.textContent = message;
+  skillsStatusEl.className = "memory-status" + (kind === "err" ? " is-err" : "");
+  if (kind === "ok") setTimeout(() => setSkillsStatus(""), 3000);
+}
+
+async function loadProfileMemory() {
+  try {
+    const profile = await send("PROFILE_GET");
+    if (!profile) return;
+    if (memName) memName.value = profile.name || "";
+    if (memCollege) memCollege.value = profile.college || "";
+    if (memSkills) memSkills.value = profile.skills || "";
+    if (memLinks) memLinks.value = profile.links || "";
+    if (memTone && profile.preferredTone) memTone.value = profile.preferredTone;
+    if (memLanguage && profile.preferredLanguage) memLanguage.value = profile.preferredLanguage;
+  } catch (err) {
+    setMemoryStatus(err.message || "Could not load profile memory.", "err");
+  }
+}
+
+async function saveProfileMemory() {
+  try {
+    const patch = {
+      name: memName ? memName.value.trim() : "",
+      college: memCollege ? memCollege.value.trim() : "",
+      skills: memSkills ? memSkills.value.trim() : "",
+      links: memLinks ? memLinks.value.trim() : "",
+      preferredTone: memTone ? memTone.value : "professional",
+      preferredLanguage: memLanguage ? memLanguage.value : "en",
+    };
+    await send("PROFILE_SET", patch);
+    setMemoryStatus("✓ Profile memory saved successfully.");
+  } catch (err) {
+    setMemoryStatus(err.message || "Failed to save profile.", "err");
+  }
+}
+
+async function clearProfileMemory() {
+  try {
+    if (memName) memName.value = "";
+    if (memCollege) memCollege.value = "";
+    if (memSkills) memSkills.value = "";
+    if (memLinks) memLinks.value = "";
+    if (memTone) memTone.value = "professional";
+    if (memLanguage) memLanguage.value = "en";
+
+    await send("PROFILE_SET", {
+      name: "",
+      college: "",
+      skills: "",
+      links: "",
+      preferredTone: "professional",
+      preferredLanguage: "en",
+    });
+    setMemoryStatus("Profile memory cleared.");
+  } catch (err) {
+    setMemoryStatus(err.message || "Could not clear profile.", "err");
+  }
+}
+
+if (memProfileForm) {
+  memProfileForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveProfileMemory();
+  });
+}
+
+if (memClearBtn) {
+  memClearBtn.addEventListener("click", clearProfileMemory);
+}
+
+// ── Skills Management & Cross-Tab Integration ────────────────────────────────
+
+let cachedSkills = [];
+
+async function loadSkills() {
+  try {
+    const skills = await send("SKILLS_GET");
+    cachedSkills = Array.isArray(skills) ? skills : [];
+    if (skillsCountBadge) {
+      skillsCountBadge.textContent = String(cachedSkills.length);
+    }
+    renderMemorySkillsList(cachedSkills);
+    renderTabSkillsChips(cachedSkills);
+  } catch (_err) {}
+}
+
+function renderMemorySkillsList(skills) {
+  if (!skillsListEl) return;
+  skillsListEl.innerHTML = "";
+
+  if (skills.length === 0) {
+    skillsListEl.innerHTML = '<p class="screenshot-hint">No skills saved yet. Click "+ New" above to create one.</p>';
+    return;
+  }
+
+  skills.forEach((skill) => {
+    const item = document.createElement("div");
+    item.className = "skill-item";
+
+    const main = document.createElement("div");
+    main.className = "skill-item-main";
+
+    const header = document.createElement("div");
+    header.className = "skill-item-header";
+
+    const name = document.createElement("strong");
+    name.className = "skill-item-name";
+    name.textContent = skill.name;
+
+    const targetBadge = document.createElement("span");
+    targetBadge.className = "skill-item-target skill-item-target--" + skill.target;
+    targetBadge.textContent = skill.target;
+
+    header.appendChild(name);
+    header.appendChild(targetBadge);
+
+    const prompt = document.createElement("p");
+    prompt.className = "skill-item-prompt";
+    prompt.textContent = skill.prompt;
+
+    main.appendChild(header);
+    main.appendChild(prompt);
+
+    const actions = document.createElement("div");
+    actions.className = "skill-item-actions";
+
+    const runBtn = document.createElement("button");
+    runBtn.type = "button";
+    runBtn.className = "skill-run-btn";
+    runBtn.title = "Run skill on active page";
+    runBtn.textContent = "▶ Run";
+    runBtn.addEventListener("click", () => runSkill(skill));
+
+    actions.appendChild(runBtn);
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "skill-edit-btn";
+    editBtn.title = "Edit / rename skill";
+    editBtn.textContent = "✏";
+    editBtn.addEventListener("click", () => openSkillEditor(skill));
+    actions.appendChild(editBtn);
+
+    if (!skill.builtin) {
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "skill-del-btn";
+      delBtn.title = "Delete skill";
+      delBtn.textContent = "🗑";
+      delBtn.addEventListener("click", async () => {
+        try {
+          const updated = await send("SKILL_DELETE", { id: skill.id });
+          cachedSkills = Array.isArray(updated) ? updated : [];
+          if (skillsCountBadge) skillsCountBadge.textContent = String(cachedSkills.length);
+          renderMemorySkillsList(cachedSkills);
+          renderTabSkillsChips(cachedSkills);
+          setSkillsStatus("Skill deleted.");
+        } catch (err) {
+          setSkillsStatus(err.message || "Could not delete skill.", "err");
+        }
+      });
+      actions.appendChild(delBtn);
+    }
+
+    item.appendChild(main);
+    item.appendChild(actions);
+    skillsListEl.appendChild(item);
+  });
+}
+
+function openSkillEditor(skill) {
+  if (!skillEditorCard) return;
+  skillEditorCard.hidden = false;
+  if (skillIdInput) skillIdInput.value = skill ? (skill.id || "") : "";
+  if (skillEditorTitle) skillEditorTitle.textContent = skill ? "Edit skill" : "New skill";
+  if (skillNameInput) skillNameInput.value = skill ? (skill.name || "") : "";
+  if (skillTargetInput) skillTargetInput.value = (skill && skill.target) ? skill.target : "agent";
+  if (skillPromptInput) skillPromptInput.value = skill ? (skill.prompt || "") : "";
+  if (skillUseProfileInput) skillUseProfileInput.checked = Boolean(skill && skill.useProfile);
+  if (skillNameInput) skillNameInput.focus();
+  skillEditorCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function renderTabSkillsChips(_skills) {
+  // Skills are maintained exclusively within the Memory tab.
+}
+
+async function runSkill(skill) {
+  if (!skill) return;
+
+  let prompt = skill.prompt;
+  if (skill.useProfile) {
+    try {
+      const profile = await send("PROFILE_GET");
+      if (profile && profile.name) {
+        prompt += ` (Profile: name is ${profile.name}${profile.college ? ", college: " + profile.college : ""}${profile.skills ? ", skills: " + profile.skills : ""})`;
+      }
+    } catch (_pErr) {}
+  }
+
+  if (skill.target === "summarise") {
+    switchToTab("summarise");
+    await runSummarise(true, prompt);
+  } else if (skill.target === "chat") {
+    switchToTab("chat");
+    if (chatInput) {
+      chatInput.value = prompt;
+      chatInput.focus();
+      await sendChatMessage(prompt);
+    }
+  } else if (skill.target === "agent") {
+    switchToTab("agent");
+    const goalInput = document.getElementById("agent-goal-input");
+    if (goalInput) {
+      goalInput.value = prompt;
+      goalInput.focus();
+      goalInput.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+}
+
+// Wire Skill Add toggle & save
+if (skillsAddToggleBtn && skillEditorCard) {
+  skillsAddToggleBtn.addEventListener("click", () => {
+    if (skillEditorCard.hidden) {
+      openSkillEditor(null);
+    } else {
+      skillEditorCard.hidden = true;
+    }
+  });
+}
+
+if (skillCancelBtn && skillEditorCard) {
+  skillCancelBtn.addEventListener("click", () => {
+    skillEditorCard.hidden = true;
+    if (skillIdInput) skillIdInput.value = "";
+    if (skillNameInput) skillNameInput.value = "";
+    if (skillPromptInput) skillPromptInput.value = "";
+    if (skillUseProfileInput) skillUseProfileInput.checked = false;
+  });
+}
+
+if (skillSaveBtn) {
+  skillSaveBtn.addEventListener("click", async () => {
+    const id = skillIdInput ? skillIdInput.value.trim() : "";
+    const name = skillNameInput ? skillNameInput.value.trim() : "";
+    const prompt = skillPromptInput ? skillPromptInput.value.trim() : "";
+    const target = skillTargetInput ? skillTargetInput.value : "agent";
+    const useProfile = skillUseProfileInput ? skillUseProfileInput.checked : false;
+
+    if (!name || !prompt) {
+      setSkillsStatus("Name and prompt are required.", "err");
+      return;
+    }
+
+    try {
+      const payload = { name, prompt, target, useProfile };
+      if (id) payload.id = id;
+      const updated = await send("SKILL_SAVE", payload);
+      cachedSkills = Array.isArray(updated) ? updated : [];
+      if (skillsCountBadge) skillsCountBadge.textContent = String(cachedSkills.length);
+      renderMemorySkillsList(cachedSkills);
+      renderTabSkillsChips(cachedSkills);
+      if (skillEditorCard) skillEditorCard.hidden = true;
+      if (skillIdInput) skillIdInput.value = "";
+      if (skillNameInput) skillNameInput.value = "";
+      if (skillPromptInput) skillPromptInput.value = "";
+      if (skillUseProfileInput) skillUseProfileInput.checked = false;
+      setSkillsStatus(id ? `✓ Skill "${name}" updated.` : `✓ Skill "${name}" saved.`);
+    } catch (err) {
+      setSkillsStatus(err.message || "Failed to save skill.", "err");
+    }
+  });
+}
+
+// Wire Clear
+if (skillsClearBtn) {
+  skillsClearBtn.addEventListener("click", async () => {
+    try {
+      const cleared = await send("SKILLS_CLEAR");
+      cachedSkills = Array.isArray(cleared) ? cleared : [];
+      if (skillsCountBadge) skillsCountBadge.textContent = String(cachedSkills.length);
+      renderMemorySkillsList(cachedSkills);
+      renderTabSkillsChips(cachedSkills);
+      if (skillEditorCard) skillEditorCard.hidden = true;
+      if (skillIdInput) skillIdInput.value = "";
+      if (skillNameInput) skillNameInput.value = "";
+      if (skillPromptInput) skillPromptInput.value = "";
+      if (skillUseProfileInput) skillUseProfileInput.checked = false;
+      setSkillsStatus("All skills cleared.");
+    } catch (err) {
+      setSkillsStatus(err.message || "Failed to clear skills.", "err");
+    }
+  });
+}
+
+// Wire Reset
+if (skillsResetBtn) {
+  skillsResetBtn.addEventListener("click", async () => {
+    try {
+      const reset = await send("SKILLS_RESET");
+      cachedSkills = Array.isArray(reset) ? reset : [];
+      if (skillsCountBadge) skillsCountBadge.textContent = String(cachedSkills.length);
+      renderMemorySkillsList(cachedSkills);
+      renderTabSkillsChips(cachedSkills);
+      if (skillEditorCard) skillEditorCard.hidden = true;
+      if (skillIdInput) skillIdInput.value = "";
+      if (skillNameInput) skillNameInput.value = "";
+      if (skillPromptInput) skillPromptInput.value = "";
+      if (skillUseProfileInput) skillUseProfileInput.checked = false;
+      setSkillsStatus("Reset to default seed skills.");
+    } catch (err) {
+      setSkillsStatus(err.message || "Failed to reset skills.", "err");
+    }
+  });
+}
+
+// Wire Export
+if (skillsExportBtn) {
+  skillsExportBtn.addEventListener("click", async () => {
+    try {
+      const skills = await send("SKILLS_GET");
+      const json = JSON.stringify(skills, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sahayak-skills-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setSkillsStatus("✓ Skills exported to JSON.");
+    } catch (err) {
+      setSkillsStatus(err.message || "Export failed.", "err");
+    }
+  });
+}
+
+// Wire Import
+if (skillsImportFile) {
+  skillsImportFile.addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const text = e.target.result;
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch (_parseErr) {
+          throw new Error("Invalid file: not valid JSON.");
+        }
+        if (!Array.isArray(parsed)) {
+          throw new Error("Invalid format: JSON file must contain an array of skills.");
+        }
+        const result = await send("SKILLS_IMPORT", { skills: parsed });
+        cachedSkills = result.skills || [];
+        if (skillsCountBadge) skillsCountBadge.textContent = String(cachedSkills.length);
+        renderMemorySkillsList(cachedSkills);
+        renderTabSkillsChips(cachedSkills);
+        setSkillsStatus(`✓ Successfully imported ${result.addedCount || 0} new skill(s).`);
+      } catch (err) {
+        setSkillsStatus(err.message || "Import failed: invalid JSON.", "err");
+      } finally {
+        skillsImportFile.value = "";
+      }
+    };
+    reader.readAsText(file);
+  });
+}
+
+// ── Mem0 Cloud Cross-Session Memory Controller ──────────────────────────────
+
+const mem0KeyInput      = document.getElementById("mem0-key-input");
+const mem0UserInput     = document.getElementById("mem0-user-input");
+const mem0EnableToggle  = document.getElementById("mem0-enable-toggle");
+const mem0StatusPill    = document.getElementById("mem0-status-pill");
+const mem0StatusMsg     = document.getElementById("mem0-status-msg");
+const mem0SaveBtn       = document.getElementById("mem0-save-btn");
+const mem0DisconnectBtn = document.getElementById("mem0-disconnect-btn");
+const mem0RefreshBtn    = document.getElementById("mem0-refresh-btn");
+const mem0ListEl        = document.getElementById("mem0-list");
+const mem0CountBadge    = document.getElementById("mem0-count-badge");
+
+function setMem0Status(message, kind = "ok") {
+  if (!mem0StatusMsg) return;
+  if (!message) {
+    mem0StatusMsg.hidden = true;
+    mem0StatusMsg.textContent = "";
+    return;
+  }
+  mem0StatusMsg.hidden = false;
+  mem0StatusMsg.textContent = message;
+  mem0StatusMsg.className = "memory-status" + (kind === "err" ? " is-err" : "");
+  if (kind === "ok") setTimeout(() => setMem0Status(""), 3000);
+}
+
+async function loadMem0Config() {
+  try {
+    const settings = await send("SETTINGS_GET");
+    if (mem0KeyInput) {
+      mem0KeyInput.value = "";
+      mem0KeyInput.placeholder = settings.mem0ApiKey ? "Key saved — enter new to replace" : "e.g. m0-...";
+    }
+    if (mem0UserInput) {
+      mem0UserInput.value = settings.mem0UserId || "sahayak_user";
+    }
+    if (mem0EnableToggle) {
+      mem0EnableToggle.checked = Boolean(settings.mem0Enabled);
+    }
+    if (mem0StatusPill) {
+      mem0StatusPill.style.background = "";
+      mem0StatusPill.style.color = "";
+      if (settings.mem0ApiKey && settings.mem0Enabled) {
+        mem0StatusPill.textContent = "Active";
+        mem0StatusPill.className = "memory-pill memory-pill--active";
+      } else if (settings.mem0ApiKey) {
+        mem0StatusPill.textContent = "Paused";
+        mem0StatusPill.className = "memory-pill memory-pill--paused";
+      } else {
+        mem0StatusPill.textContent = "Disconnected";
+        mem0StatusPill.className = "memory-pill memory-pill--disconnected";
+      }
+    }
+    if (settings.mem0ApiKey) {
+      await fetchAndRenderMem0List();
+    } else if (mem0ListEl) {
+      mem0ListEl.innerHTML = '<p class="screenshot-hint">Add your Mem0 API key above to sync learned preferences across chat sessions.</p>';
+      if (mem0CountBadge) mem0CountBadge.textContent = "0";
+    }
+  } catch (err) {
+    setMem0Status(err.message || "Could not load Mem0 settings.", "err");
+  }
+}
+
+async function fetchAndRenderMem0List() {
+  if (!mem0ListEl) return;
+  try {
+    const res = await send("MEM0_LIST");
+    const memories = (res && res.memories) || [];
+    if (mem0CountBadge) mem0CountBadge.textContent = String(memories.length);
+
+    if (memories.length === 0) {
+      mem0ListEl.innerHTML = '<p class="screenshot-hint">No memories recorded yet. Start chatting in the Chat tab and Mem0 will automatically extract facts and preferences!</p>';
+      return;
+    }
+
+    mem0ListEl.innerHTML = "";
+    memories.forEach((item) => {
+      const card = document.createElement("div");
+      card.className = "skill-item";
+
+      const main = document.createElement("div");
+      main.className = "skill-item-main";
+
+      const text = document.createElement("p");
+      text.className = "skill-item-prompt";
+      text.style.color = "var(--ink)";
+      text.style.fontWeight = "500";
+      text.textContent = item.memory;
+
+      main.appendChild(text);
+
+      const actions = document.createElement("div");
+      actions.className = "skill-item-actions";
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "skill-del-btn";
+      delBtn.title = "Delete learned memory";
+      delBtn.textContent = "🗑";
+      delBtn.addEventListener("click", async () => {
+        try {
+          await send("MEM0_DELETE", { id: item.id });
+          await fetchAndRenderMem0List();
+          setMem0Status("Memory deleted.");
+        } catch (e) {
+          setMem0Status(e.message || "Failed to delete memory.", "err");
+        }
+      });
+
+      actions.appendChild(delBtn);
+      card.appendChild(main);
+      card.appendChild(actions);
+      mem0ListEl.appendChild(card);
+    });
+  } catch (err) {
+    mem0ListEl.innerHTML = `<p class="screenshot-hint" style="color:var(--warn-ink)">Error fetching memories: ${err.message}</p>`;
+  }
+}
+
+if (mem0SaveBtn) {
+  mem0SaveBtn.addEventListener("click", async () => {
+    try {
+      const patch = {
+        mem0UserId: mem0UserInput ? (mem0UserInput.value.trim() || "sahayak_user") : "sahayak_user",
+        mem0Enabled: mem0EnableToggle ? mem0EnableToggle.checked : true,
+      };
+      const keyVal = mem0KeyInput ? mem0KeyInput.value.trim() : "";
+      if (keyVal) {
+        patch.mem0ApiKey = keyVal;
+        patch.mem0Enabled = true;
+      }
+      await send("SETTINGS_SET", patch);
+      await loadMem0Config();
+      setMem0Status("✓ Mem0 configuration saved.");
+    } catch (err) {
+      setMem0Status(err.message || "Failed to save Mem0 config.", "err");
+    }
+  });
+}
+
+if (mem0DisconnectBtn) {
+  mem0DisconnectBtn.addEventListener("click", async () => {
+    try {
+      await send("SETTINGS_SET", { mem0ApiKey: "", mem0Enabled: false });
+      if (mem0KeyInput) mem0KeyInput.value = "";
+      await loadMem0Config();
+      setMem0Status("Mem0 disconnected.");
+    } catch (err) {
+      setMem0Status(err.message || "Failed to disconnect.", "err");
+    }
+  });
+}
+
+if (mem0RefreshBtn) {
+  mem0RefreshBtn.addEventListener("click", async () => {
+    await fetchAndRenderMem0List();
+    setMem0Status("Memories refreshed.");
+  });
+}

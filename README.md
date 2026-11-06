@@ -4,13 +4,14 @@
 [![Pure Vanilla JS](https://img.shields.io/badge/Language-Vanilla%20JavaScript-yellow.svg)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
 [![Gemini AI](https://img.shields.io/badge/AI-Google%20Gemini-orange.svg)](https://aistudio.google.com/)
 [![Groq Fast Fallback](https://img.shields.io/badge/Fallback-Groq%20Cloud-green.svg)](https://console.groq.com/)
+[![Mem0 Memory](https://img.shields.io/badge/Memory-Mem0%20Cloud%20Graph-cyan.svg)](https://mem0.ai/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 [![GitHub Profile](https://img.shields.io/badge/Author-krishnaathul761-181717.svg?logo=github)](https://github.com/krishnaathul761)
 
-**Sahayak** (Sanskrit/Hindi for *“Assistant”* or *“Companion”*) is a privacy-first, human-in-the-loop Chrome Extension built on **Manifest V3**. Operating directly within Chrome's Side Panel, Sahayak assists with reading articles, analyzing YouTube videos, answering grounded questions about page content, inspecting cropped screenshots, and executing step-by-step browser errands.
+**Sahayak** (Sanskrit/Hindi for *“Assistant”* or *“Companion”*) is a privacy-first, human-in-the-loop Chrome Extension built on **Manifest V3**. Operating directly within Chrome's Side Panel, Sahayak assists with reading long articles, analysing YouTube videos with clickable timestamps, answering grounded questions about page content, inspecting cropped screenshots, managing local & cloud memory, and executing step-by-step browser errands with human approval at every step.
 
 > [!IMPORTANT]
-> **Zero Autonomous Mutation:** Sahayak strictly adheres to a human-in-the-loop safety principle. The AI can inspect pages and propose single actions, but **it cannot click, type, or mutate the DOM without explicit user approval for each step**.
+> **Zero Autonomous Mutation:** Sahayak strictly adheres to a human-in-the-loop safety principle. The AI can inspect pages and propose single actions, but **it cannot click, type, or mutate the DOM without explicit user approval for each step**. Hardcoded code barriers prevent automated typing into password, card, or OTP fields.
 
 ---
 
@@ -21,191 +22,162 @@
 | **Phase 1** | Week 1 | **The Eyes** | Readability article summaries, YouTube multimodal video analysis, clickable seeking timestamps, selection explanations, EN/Hinglish instant translation. | **`COMPLETED`** ✅ |
 | **Phase 2** | Week 2 | **The Brain** | Grounded page chat, navigation context auto-reset, right-click context menus, screen capture + canvas cropper, visual screenshot Q&A, dark mode. | **`COMPLETED`** ✅ |
 | **Phase 3** | Week 3 | **The Hands** | Interactive element scanner, shadow-DOM badges, "Find it for me", approval-based agent loop, dry-run mode, session persistence, 200-item action log, practice pages. | **`COMPLETED`** ✅ |
-| **Phase 4** | Week 4 | **Memory & Ship** | User profile memory, reusable skills export/import, packaging, and final production hardening. | *Planned* ⏳ |
+| **Phase 4** | Week 4 | **Memory & Ship** | Local profile memory, reusable skills export/import, Mem0 cloud sync, strict code-level safety rails, landing page, and release packaging. | **`COMPLETED`** ✅ |
 
 ---
 
-## ✨ Features Built to Date
+## 📸 Screenshots Gallery
 
-### 👁️ Phase 1 — The Eyes (Reading & Comprehension)
-- **Article Summarisation:** Extracts core article text using Mozilla Readability, stripping ads, popups, and sidebars. Delivers a 1-sentence TL;DR, 5 bullet points, and an actionable "Next Steps" recommendation.
-- **YouTube Video Analysis:** Uses Gemini's native multimodal capabilities to analyze public YouTube videos. Extracts summaries and generates clickable chapter timestamps that jump directly to the target time in the active YouTube tab without opening a new tab.
-- **Instant Language Toggle:** Switch between **English** and **Hinglish** instantly. Source summaries are preserved in English so switching back never triggers redundant AI requests.
-- **Dual-Provider Architecture:** Primary inference powered by **Google Gemini** (`gemini-2.0-flash-lite` / `gemini-2.0-flash`) with automatic, transparent fallback to **Groq Cloud** (`llama-3.3-70b-versatile`) on rate limits or service disruptions.
-- **24-Hour Local Cache:** Article and YouTube summaries are cached in `chrome.storage.local` with LRU eviction to prevent repeated API calls.
-
-### 🧠 Phase 2 — The Brain (Grounded Reasoning & Vision)
-- **Grounded Page Chat:** Conversational Q&A restricted exclusively to the content of the current tab. If a fact isn't present in the page text, Sahayak states that it cannot be found.
-- **Navigation Awareness:** Chat context and article memory automatically reset upon navigating to a new domain or page.
-- **Right-Click Context Menus:** Highlight any text on any webpage → right-click → **Sahayak** → **Explain this**, **Translate**, or **Draft a reply**. Automatically launches the side panel.
-- **Screenshot Crop & Ask:** Built-in canvas cropper allowing users to highlight a specific UI element, chart, code block, or diagram, and ask visual questions using Gemini Vision.
-- **Adaptive UI:** Supports system dark/light modes with a manual toggle in the side panel header.
-
-### ✋ Phase 3 — The Hands (Interactive Agent & Automation)
-- **Interactive Element Scanner:** Automatically detects interactive buttons, links, inputs, selects, and textareas. Numbers them with clean, sequential 1-based badges rendered in an isolated Shadow DOM.
-- **"Find It For Me":** Type what you are looking for (e.g. *"login button"*, *"filter under $100"*). Sahayak identifies the matching element and smoothly scrolls to and pulses it on the page without taking any action.
-- **Human-in-the-Loop Agent Loop:**
-  - The model scans the page and proposes exactly **ONE** action at a time (`click`, `type`, `select`, `scroll`, `done`).
-  - The loop pauses in `awaiting_approval`.
-  - The user reviews the target badge number, input value, reasoning, and consequential warnings.
-  - The action executes **ONLY** when the user clicks **Approve**.
-- **Action Controls:**
-  - **Approve:** Executes the proposed step and scans for the next step.
-  - **Skip:** Bypasses the proposed step and asks the model to re-plan.
-  - **Stop:** Halts the errand immediately and removes all badges.
-  - **Dry-Run Mode:** Runs through errands by highlighting targets and logging decisions without mutating the underlying webpage.
-- **Resilient Persistence:** Errand state and proposals are saved to `chrome.storage.local`. If the background Service Worker goes to sleep or restarts, the side panel seamlessly restores the exact errand proposal upon reopening.
-- **Action & History Logging:**
-  - **Errand Steps Log:** Live trace of steps taken in the current errand with a one-click **Clear** button.
-  - **Persistent Action Log:** Capped 200-entry global history log with timestamps, decisions, and refresh/clear controls.
-- **Sensitive Field Safety Barrier:** Strict hardcoded refusal (`SAFETY_REFUSAL`) that blocks automated typing into passwords, OTPs, PINs, and credit card numbers.
-- **Built-in Practice Pages:** Local offline test environments located in `pages/practice/`:
-  - `internship-form.html`: Multi-step form for testing complex input and navigation.
-  - `shop.html`: Practice e-commerce catalog for search and filter testing.
-  - `acceptance-gate.html`: Automated test suite verifying schema validation, alias normalization, and security barriers.
+| Human-in-the-Loop Errand Execution | Cross-Session Memory & Mem0 Sync | Reusable Skills Creator & Library |
+|:---:|:---:|:---:|
+| ![Agent Errand Complete](assets/screenshots/agent-errand.png) | ![Mem0 Sync Card](assets/screenshots/memory-mem0.png) | ![New Skill Form](assets/screenshots/skills-modal.png) |
 
 ---
 
-## 🏗️ Architecture & Topology
+## ✨ 11 Definition of Done (DoD) Core User Flows
 
-Sahayak is built with **zero external frameworks and zero bundlers**—written entirely in modular, modern Vanilla JavaScript for maximum performance, auditability, and minimal extension footprint.
+A new user can install Sahayak and immediately exercise all 11 core capabilities:
 
-```
-AI-Browser/
-├── manifest.json            # MV3 Manifest with scripting, tabs, and storage permissions
-├── assets/                  # Extension icons (16px, 48px, 128px)
-├── background/
-│   ├── service-worker.js    # Service worker lifecycle & context menus
-│   ├── router.js            # Central dispatcher routing UI & content script messages
-│   ├── ai/
-│   │   ├── gemini.js        # Gemini API client (text, video, vision) + backoff
-│   │   ├── groq.js          # Groq Cloud API client + rate-limit handler
-│   │   ├── ai.js            # Unified model router with automatic fallback
-│   │   ├── prompts.js       # System prompts with 50-element capping for rate limits
-│   │   └── cache.js         # 24h TTL summary cache with LRU eviction
-│   └── agent/
-│       ├── loop.js          # Human-in-the-loop step loop, dry-run & state machine
-│       ├── schema.js        # Strict JSON validation, alias normalizer & sensitive refusal
-│       └── persist.js       # Session persistence & 200-entry action log
-├── content/
-│   ├── extract.js           # Readability DOM extractor & fallback parser
-│   ├── scanner.js           # Interactive DOM element scanner & 1-based numbering
-│   ├── overlay.js           # Isolated Shadow-DOM numbered badges & element pulsing
-│   ├── execute.js           # DOM action executor (click, type, select) with safety checks
-│   └── index.js             # Content script message router with duplicate guards
-├── sidepanel/
-│   ├── index.html           # Sidepanel layout (Summarise, Chat, Agent tabs)
-│   ├── panel.js             # UI state machine, approval cards, history renderers
-│   └── styles.css           # Premium design tokens, animations, light & dark themes
-├── options/
-│   ├── index.html           # Dedicated options & API key settings page
-│   ├── options.js
-│   └── styles.css
-├── pages/
-│   └── practice/
-│       ├── internship-form.html # Multi-step practice form errand
-│       ├── shop.html            # Practice e-commerce search & filter errand
-│       └── acceptance-gate.html # Interactive unit & contract test suite
-├── lib/
-│   ├── readability.js       # Mozilla Readability library
-│   ├── readability-readerable.js
-│   └── utils.js             # UUID generation, message envelope, safe JSON helpers
-└── Docs/
-    ├── ProblemStatment.md   # Product specifications & requirements
-    ├── architecture.md      # Detailed system architecture document
-    ├── implementation-plan.md # 4-week phase breakdown & acceptance gates
-    └── edge-case.md         # Edge cases & mitigation strategies
-```
+### 1. Summarise an Article or Public YouTube Video
+- **Articles:** Click **Summarise this page** on any article or blog post. Sahayak runs Mozilla Readability in the content script, strips ads and navigation sidebars, and formats a 1-sentence TL;DR, 5 concise bullet points, and actionable next steps.
+- **YouTube Videos:** When on any public YouTube watch page, Gemini's multimodal video endpoint analyzes the video content and generates chapter timestamps. Clicking any timestamp jumps directly to that second in the active YouTube player without opening a new tab.
 
-### Chromium MV3 Isolation Topology
+### 2. Switch Between English & Hinglish Instantly
+- Toggle between **English** and **Hinglish** (conversational Hindi in Latin script) with a single click. Source summaries are preserved in English in `chrome.storage.local` with LRU eviction so switching back and forth never triggers duplicate API calls.
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        Chrome Browser Window                           │
-│                                                                        │
-│  ┌──────────────────────────┐         ┌─────────────────────────────┐  │
-│  │     Web Page Tab         │         │     Chrome Side Panel       │  │
-│  │                          │         │     (sidepanel/index.html)  │  │
-│  │  ┌────────────────────┐  │         │                             │  │
-│  │  │ Host Page DOM      │  │         │  - Summarise / Chat / Agent │  │
-│  │  └────────────────────┘  │ Messages│  - Errand Goal Input        │  │
-│  │  ┌────────────────────┐  │◄───────►│  - Proposal Approval Card   │  │
-│  │  │ Isolated Content   │  │         │  - Persistent Action Log    │  │
-│  │  │ Script & Overlay   │  │         │  - Options & Dark Mode      │  │
-│  │  │ (Shadow DOM)       │  │         └──────────────┬──────────────┘  │
-│  └────────────▲─────────────┘                        │                 │
-│               │                                      │                 │
-│               │ chrome.tabs.sendMessage              │ Messages        │
-│               ▼                                      ▼                 │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │             Background Service Worker (background/...)            │  │
-│  │                                                                  │  │
-│  │  - Router & Dispatcher (router.js)                               │  │
-│  │  - Agent Step Loop & State Machine (loop.js)                     │  │
-│  │  - Schema Normalizer & Safety Barriers (schema.js)               │  │
-│  │  - Session & Action Log Persistence (persist.js)                 │  │
-│  │  - Gemini & Groq Unified AI Clients (ai.js, gemini.js, groq.js)  │  │
-│  └───────────────────────────────────┬──────────────────────────────┘  │
-└──────────────────────────────────────┼─────────────────────────────────┘
-                                       │ HTTPS Fetch
-                                       ▼
-                     ┌───────────────────────────────────┐
-                     │ Google Gemini API / Groq Cloud    │
-                     └───────────────────────────────────┘
-```
+### 3. Chat with the Current Web Page
+- Switch to the **Chat** tab to ask grounded questions. Sahayak answers strictly using the visible text of the current tab. If a question asks about details not present in the article, Sahayak politely explains that the page does not contain that information.
+- Navigation context automatically clears whenever you switch domains.
+
+### 4. Use Explain, Translate, or Draft from Selected Text
+- Highlight any paragraph or sentence on any webpage → right-click → select **Sahayak**:
+  - **Explain this:** Breaks down complex terminology into simple terms.
+  - **Translate:** Translates the selected snippet into your configured target language (e.g. Hindi).
+  - **Draft a reply:** Generates a polite, professional reply incorporating your profile tone.
+
+### 5. Ask Questions About Visible Screen Content
+- Switch to the **Screenshot** tool in the Chat tab, click **Capture Screen**, drag a selection box around charts, diagrams, code blocks, or UI elements, and ask visual questions powered by Gemini Vision. Protected payment and internal browser pages are strictly blocked from screenshot capture.
+
+### 6. "Find It For Me" (Visual Element Search)
+- Switch to the **Agent** tab, enter a natural-language description (e.g. *"Where is the register button?"* or *"search bar"*), and click **Find**. Sahayak identifies the matching element, smoothly scrolls it into view, and pulses an animated teal glow. **It never clicks or mutates the DOM.**
+
+### 7. Automate Browser Errands Step-by-Step
+- Provide a goal (e.g. *"Fill personal details with Priya Sharma and click Next"*). Sahayak scans interactive DOM controls, renders numbered badges in an isolated Shadow DOM, and proposes exactly **ONE** action at a time.
+
+### 8. Review and Approve Each Step (Approve, Skip, Stop)
+- The errand loop strictly pauses in `awaiting_approval`. Review the proposed badge number, action type (`click`, `type`, `select`, `scroll`, `done`), target label, input value, and reasoning.
+- Click **Approve** to execute, **Skip** to re-plan, or **Stop** to halt immediately.
+- Turn on **Dry-Run Mode** to preview the errand with target highlighting and action logging without making any DOM mutations.
+
+### 9. Review Persistent Action & Errand Logs
+- Errand steps are recorded in the **Errand Steps Log** and saved globally to a 200-item FIFO **Persistent Action Log** stored in `chrome.storage.local`. Progress survives background Service Worker sleep and panel closures.
+
+### 10. Reuse Local Profile Memory & One-Click Skills
+- **User Profile Memory:** Store your name, college, technical skills, portfolio links, and preferred tone in the **Memory** tab. When running form errands (e.g. *"Fill internship form from my profile"*), Sahayak auto-fills your saved details.
+- **Skills Library:** Create custom one-click instructions (e.g. *"Exam notes"*, *"Explain in Hinglish"*, *"Reply politely"*). Run them as prompt chips across Summarise, Chat, and Agent tabs. Export your skills to JSON or import existing libraries safely.
+- **Cross-Session Memory (Mem0):** Optional Mem0 cloud integration automatically extracts and persists conversational facts across chat sessions.
+
+### 11. Strict Deterministic Code-Level Safety Rails
+- Security rules are hardcoded in extension JavaScript—never left solely to LLM prompt compliance:
+  - **Banking & UPI Gate:** Payment processors (Razorpay, Stripe, PayPal, Paytm, PhonePe, BHIM) and banking domains/paths are blocked from all AI scanning and screenshots.
+  - **Field Gate:** Automated typing into password, PIN, OTP, TOTP, CVV, and credit/debit card fields is refused with `SAFETY_REFUSAL`.
+  - **Consequential Action Gate:** Form submissions, payment clicks, and account deletions require explicit **Two-Step Confirmation** (`Confirm Action?`).
+  - **Kill Switch:** Visible at all times during tasks; clicking **Stop** halts the errand loop instantly.
 
 ---
 
-## 🔒 Safety, Privacy & Security Guardrails
+## 🔒 Safety Architecture & Security Guardrails
 
-Sahayak treats user privacy and browser security as foundational requirements:
+| Threat / Risk | Defense Mechanism | Code Location |
+|---|---|---|
+| **Autonomous DOM Mutation** | Human-in-the-loop state machine pauses at every single step; executes only upon user click. | `background/agent/loop.js` |
+| **Credential & Password Leakage** | Hardcoded regex and autocomplete filters block typing into password, OTP, and PIN inputs. | `background/safety/fields.js` |
+| **Payment & Financial Loss** | Domain & path heuristics block banking portals, UPI gateways, and card processors. | `background/safety/pages.js` |
+| **Irreversible Form Submission** | Consequential actions (Submit, Pay, Delete) trigger warning badge and require a second confirm click. | `background/safety/actions.js` |
+| **Runaway Agent Loops** | Hard step limits (default 20), dry-run simulation mode, and immediate kill switch. | `background/agent/loop.js` |
+| **Screen Scraping of Secrets** | Screenshot capture and upload are blocked on protected banking, payment, and internal pages. | `background/router.js` |
+| **Malicious Skill Injection** | Import validation strictly checks JSON schema and strips prompt strings attempting password or payment actions. | `background/router.js` |
 
-1. **Local Key Storage:** API keys are stored solely in `chrome.storage.local` on your physical machine. They are never transmitted to third-party tracking servers or stored in source code.
-2. **Zero Autonomous Action:** The agent loop will never execute a click, text entry, or selection without explicit human approval via the **Approve** button.
-3. **Sensitive Field Barrier:** Automated typing into fields identified as passwords, OTPs, PINs, card numbers, or CVVs is prohibited by hardcoded regular expressions and autocomplete flags.
-4. **Restricted Domain Gating:** Agent automation and page extraction are completely blocked on internal browser pages (`chrome://`, `about:`, `edge://`) and the Chrome Web Store.
-5. **Dry-Run Mode:** Users can preview exactly what elements the model wants to touch by activating Dry-Run mode, which highlights elements and logs actions without modifying page state.
-6. **Consequential Action Warnings:** High-stakes actions matching keywords like *Submit*, *Pay*, *Purchase*, *Delete*, or *Checkout* display prominent warning banners on the approval card.
+---
+
+## 📋 Permissions Why-List
+
+Sahayak declares only the minimal set of permissions required for its side-panel workflow:
+
+| Permission | Why Sahayak Needs It |
+|---|---|
+| `sidePanel` | Displays the companion interface persistently alongside web tabs without blocking page interaction. |
+| `storage` | Saves user API keys, local profile memory, 24-hour summary cache, and 200-entry action logs locally on your machine. |
+| `activeTab` | Grants temporary access to extract article text or capture screenshots **only** when explicitly invoked by the user on the current tab. |
+| `tabs` | Reads the current URL to reset chat context upon navigation and verify page safety before running errands. |
+| `scripting` | Injects the interactive element scanner and isolated Shadow-DOM numbered badges onto the page during errands. |
+| `contextMenus` | Adds the right-click menu items (*Explain this*, *Translate*, *Draft a reply*) when text is highlighted. |
 
 ---
 
 ## 🚀 Installation & Getting Started
 
-### Prerequisites
-- **Google Chrome** (v116+ recommended for Side Panel API support).
-- A **[Google Gemini API Key](https://aistudio.google.com)** (Free tier available).
-- *(Optional)* A **[Groq Cloud API Key](https://console.groq.com)** for instant fallback during rate limits.
+### Method 1: Install from Release Package (Recommended)
 
-### Setup Instructions
+1. Download **`sahayak-extension.zip`** from [GitHub Releases](https://github.com/krishnaathul761/AI-Browser/releases).
+2. Unzip the archive to a local folder (e.g. `C:\Users\<You>\Desktop\sahayak-extension`).
+3. Open Google Chrome and navigate to `chrome://extensions/`.
+4. Toggle **Developer mode** on (top-right switch).
+5. Click **Load unpacked** (top-left) and select the unzipped directory (where `manifest.json` is located).
+6. Click the Extensions puzzle icon in the Chrome toolbar and pin **Sahayak**.
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/krishnaathul761/AI-Browser.git
-   ```
-2. **Open Extensions in Chrome:**
-   - Navigate to `chrome://extensions/` in your browser.
-   - Toggle **Developer mode** on (top-right corner).
-3. **Load Unpacked:**
-   - Click **Load unpacked** (top-left).
-   - Select the `AI-Browser` folder (the root directory containing `manifest.json`).
-4. **Pin Sahayak:**
-   - Click the Chrome puzzle-piece icon in the browser toolbar and pin **Sahayak**.
-5. **Add Your API Key:**
-   - Click the Sahayak icon or open the Chrome Side Panel.
-   - Click the ⚙ icon in the top right to open **Settings**.
-   - Paste your Gemini API key (and optionally Groq key) and click **Save settings**.
+### Method 2: Clone from Source Repository
+
+```bash
+git clone https://github.com/krishnaathul761/AI-Browser.git
+cd AI-Browser
+```
+Then load unpacked from `chrome://extensions/` pointing to the repository root directory.
+
+### API Key Configuration
+
+1. Click the Sahayak icon to open the Chrome Side Panel.
+2. Click the **⚙** settings icon in the top header.
+3. Enter your **Google Gemini API Key** (free tier available at [Google AI Studio](https://aistudio.google.com/)).
+4. *(Optional)* Enter a **Groq Cloud API Key** from [Groq Console](https://console.groq.com/) for instant fallback on rate limits.
+5. *(Optional)* Enter a **Mem0 API Key** from [Mem0.ai](https://mem0.ai/) for cross-session conversational memory.
+6. Click **Save settings**.
 
 ---
 
-## 🧪 Testing with Practice Pages
+## 🧪 Testing with Offline Practice Pages
 
-Sahayak includes dedicated, self-contained practice pages to safely test features without affecting real-world accounts:
+Sahayak bundles local offline test environments inside `pages/practice/`:
 
-1. In the Sahayak side panel, switch to the **Agent** tab.
-2. Under the Errand form, click any of the practice links:
-   - **[Internship Form](pages/practice/internship-form.html):** Multi-step registration form. Test entering details like name, email, college, selecting dropdowns, and advancing steps.
-   - **[Shop](pages/practice/shop.html):** E-commerce catalog. Test searching for items (e.g. *"Search headphones"*) and toggling filters.
-   - **[Acceptance Gate](pages/practice/acceptance-gate.html):** Automated test suite running unit checks for markdown fence stripping, alias normalization, sensitive field barriers, element resolution, and 200-log FIFO capping.
+1. **[Internship Form (`pages/practice/internship-form.html`)](pages/practice/internship-form.html):** Multi-step form for testing profile memory auto-fill, chip selection, dropdowns, and consequential submission confirmation.
+2. **[Practice Shop (`pages/practice/shop.html`)](pages/practice/shop.html):** E-commerce catalog for testing search, category filtering, and dry-run execution.
+3. **[Acceptance Gate Suite (`pages/practice/acceptance-gate.html`)](pages/practice/acceptance-gate.html):** Interactive test suite running **38 automated unit & contract checks** verifying:
+   - Markdown fence stripping & embedded JSON parsing
+   - Action alias normalization (`fill` → `type`, `press` → `click`)
+   - Sensitive password, OTP, and credit card field refusal (`SAFETY_REFUSAL`)
+   - Luhn card number exfiltration defense
+   - Consequential action classification & two-step confirm
+   - Kill switch state machine halt
+   - Restricted URL page blocking & practice environment allowlist
+   - Skill schema validation and export/import round-trip
+
+---
+
+## 📦 Building & Packaging Releases
+
+To create a clean release ZIP archive with `manifest.json` at the root and development/testing artifacts excluded:
+
+**PowerShell (Windows):**
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1
+```
+
+**Bash (Linux / macOS):**
+```bash
+bash scripts/package-release.sh
+```
+
+The script produces `sahayak-extension.zip` ready for distribution and installation.
 
 ---
 

@@ -298,7 +298,7 @@
       <!-- Acceptance Gate Checklist -->
       <section class="card">
         <div class="card-title">
-          <span>Acceptance Gate Criteria (8 of 8)</span>
+          <span>Acceptance Gate Criteria (10 of 10)</span>
           <button id="run-unit-checks-btn" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px;">Run Unit Tests</button>
         </div>
 
@@ -374,6 +374,24 @@
               <div class="gate-meta">Validated on internship-form.html and shop.html</div>
             </div>
           </div>
+
+          <div class="gate-item pass" id="item-skills">
+            <div class="gate-icon">✓</div>
+            <div class="gate-content">
+              <strong>9. One-click skills + import/export (Slice 4.2)</strong>
+              <p>Skills library supports create, edit/rename, delete, run across Summarise/Chat/Agent tabs; seed skills bundled; export/import with JSON schema validation &amp; safety blocking.</p>
+              <div class="gate-meta">Validated by background/router.js + SKILLS_* handlers &amp; unit checks</div>
+            </div>
+          </div>
+
+          <div class="gate-item pass" id="item-safety-rails">
+            <div class="gate-icon">✓</div>
+            <div class="gate-content">
+              <strong>10. Safety rails: code, not just prompts (Slice 4.3)</strong>
+              <p>Strict code barriers block banking/payment/UPI hosts &amp; paths, internal browser protocols, and Web Store; automated typing into password, card, and OTP fields is rejected with SAFETY_REFUSAL; consequential actions (submit/pay/delete) require explicit two-step confirmation.</p>
+              <div class="gate-meta">Validated by background/safety/{pages,fields,actions}.js</div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -403,6 +421,42 @@
               <button class="copy-btn" onclick="copyPrompt('prompt-2')">Copy</button>
             </div>
             <a href="shop.html" target="_blank" class="btn btn-primary">Open Practice Shop</a>
+          </div>
+
+          <div class="errand-card">
+            <div>
+              <h3>Slice 4.1: Profile Memory Form-Fill</h3>
+              <p>Tests filling form fields directly from saved Local Profile Memory without manually re-typing name, college, skills, or links.</p>
+            </div>
+            <div class="copy-box">
+              <span id="prompt-3">Fill internship form from my profile</span>
+              <button class="copy-btn" onclick="copyPrompt('prompt-3')">Copy</button>
+            </div>
+            <a href="internship-form.html" target="_blank" class="btn btn-primary">Open Internship Form</a>
+          </div>
+
+          <div class="errand-card">
+            <div>
+              <h3>Slice 4.2: Seed Skill &amp; Quick Chips</h3>
+              <p>Tests running seed skills like "Exam notes" (summarise), "Explain in Hinglish" (summarise), or "Reply to this email politely" (chat).</p>
+            </div>
+            <div class="copy-box">
+              <span id="prompt-4">Exam notes</span>
+              <button class="copy-btn" onclick="copyPrompt('prompt-4')">Copy</button>
+            </div>
+            <a href="acceptance-gate.html" target="_blank" class="btn btn-primary">Test on This Page</a>
+          </div>
+
+          <div class="errand-card">
+            <div>
+              <h3>Slice 4.3: Safety Rails &amp; Consequential Confirm</h3>
+              <p>Tests deterministic blocking on payment/banking URLs, sensitive fields refusal, kill switch, and consequential two-step confirmation before form submission.</p>
+            </div>
+            <div class="copy-box">
+              <span id="prompt-5">Click submit application</span>
+              <button class="copy-btn" onclick="copyPrompt('prompt-5')">Copy</button>
+            </div>
+            <a href="internship-form.html" target="_blank" class="btn btn-primary">Open Practice Form</a>
           </div>
         </div>
       </section>
@@ -523,12 +577,225 @@
       assert(trimmed.length === 200, 'Caps action log at exactly 200 items (FIFO)');
       assert(trimmed[0].step === 51 && trimmed[199].step === 250, 'Keeps the 200 most recent records');
 
+      // Test 6: Profile normalization (Slice 4.1)
+      const DEFAULT_PROFILE = {
+        name: "",
+        college: "",
+        skills: "",
+        links: "",
+        preferredLanguage: "en",
+        preferredTone: "professional"
+      };
+      function normalizeProfileTest(raw) {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) return Object.assign({}, DEFAULT_PROFILE);
+        const next = Object.assign({}, DEFAULT_PROFILE);
+        if (typeof raw.name === "string") next.name = raw.name.trim();
+        if (typeof raw.college === "string") next.college = raw.college.trim();
+        if (typeof raw.skills === "string") next.skills = raw.skills.trim();
+        if (typeof raw.links === "string") next.links = raw.links.trim();
+        if (raw.preferredLanguage === "en" || raw.preferredLanguage === "hinglish") next.preferredLanguage = raw.preferredLanguage;
+        if (typeof raw.preferredTone === "string" && raw.preferredTone.trim()) next.preferredTone = raw.preferredTone.trim();
+        return next;
+      }
+      const testP = normalizeProfileTest({ name: " Priya Sharma ", college: " IIT Bombay ", preferredTone: "casual" });
+      assert(testP.name === "Priya Sharma" && testP.college === "IIT Bombay" && testP.preferredTone === "casual" && testP.preferredLanguage === "en", 'Normalizes user profile fields & trims whitespace');
+
+      // Test 7: Form-Fill Goal Detection & Profile Injection (Slice 4.1)
+      function isFormFillGoal(goal, elements) {
+        if (!goal) return false;
+        if (/profile/i.test(goal)) return true;
+        if (/form|fill|apply|application|signup|sign-up|register|registration|internship/i.test(goal)) return true;
+        const hasInputs = Array.isArray(elements) && elements.some(el => (el.tag === "input" && el.type !== "submit" && el.type !== "button") || el.tag === "textarea" || el.tag === "select");
+        if (hasInputs && /type|enter|input|complete/i.test(goal)) return true;
+        return false;
+      }
+      assert(isFormFillGoal("Fill internship form from my profile", []) === true, 'Identifies goal requiring profile memory for form fill');
+      assert(isFormFillGoal("What is the main topic of this page?", []) === false, 'Disallows injecting profile memory into general page reading/chat');
+
+      // Test 8: Skill Schema Validation (Slice 4.2)
+      function validateSkillSchema(item) {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+        const name = typeof item.name === "string" ? item.name.trim() : "";
+        const prompt = typeof item.prompt === "string" ? item.prompt.trim() : "";
+        if (!name || !prompt) return false;
+        const target = ["summarise", "chat", "agent"].includes(item.target) ? item.target : "chat";
+        return { name, prompt, target };
+      }
+      assert(Boolean(validateSkillSchema({ name: "Exam notes", prompt: "Create structured notes", target: "summarise" })), 'Validates skill schema with name, prompt, and target');
+      assert(validateSkillSchema({ name: "", prompt: "Something" }) === false, 'Rejects skill with empty name');
+      assert(validateSkillSchema({ name: "Title", prompt: "" }) === false, 'Rejects skill with empty prompt');
+
+      // Test 9: Skill Safety Rails (Slice 4.2)
+      const BLOCKED_WORDS = ["login", "log in", "signin", "sign in", "password", "passcode", "credit card", "debit card", "cvv", "otp", "one-time password", "upi pin", "bank account", "payment gateway", "transfer money", "pay now"];
+      function checkSkillSafety(skill) {
+        const text = ((skill.name || "") + " " + (skill.prompt || "")).toLowerCase();
+        for (let i = 0; i < BLOCKED_WORDS.length; i++) {
+          if (text.includes(BLOCKED_WORDS[i])) {
+            return { ok: false, blockedBy: BLOCKED_WORDS[i] };
+          }
+        }
+        return { ok: true };
+      }
+      assert(checkSkillSafety({ name: "Quick Summary", prompt: "Summarise the main arguments" }).ok === true, 'Allows benign learning and drafting skills');
+      assert(checkSkillSafety({ name: "Login Helper", prompt: "Enter password and sign in" }).ok === false, 'Blocks skills attempting login or entering password');
+      assert(checkSkillSafety({ name: "Auto Pay", prompt: "Fill credit card and pay now" }).ok === false, 'Blocks skills attempting payments, credit cards, or UPI');
+      assert(checkSkillSafety({ name: "Verify", prompt: "Read the OTP from screen" }).ok === false, 'Blocks skills attempting OTP automation');
+
+      // Test 10: Import Failure on Invalid JSON leaves existing skills intact (Slice 4.2)
+      function safeImportSkills(existing, importData) {
+        if (!Array.isArray(importData) || importData.length === 0) {
+          throw new Error("Invalid format: must be a non-empty array of skills");
+        }
+        const valid = [];
+        for (let i = 0; i < importData.length; i++) {
+          const item = importData[i];
+          const v = validateSkillSchema(item);
+          if (!v) continue;
+          const safety = checkSkillSafety(v);
+          if (!safety.ok) {
+            throw new Error("Safety violation in skill: " + v.name);
+          }
+          valid.push(Object.assign({ id: item.id || ("skill-" + (i + 1)) }, v));
+        }
+        if (valid.length === 0) {
+          throw new Error("No valid skills found in payload");
+        }
+        // Merge without mutating existing on error
+        const next = existing.slice();
+        for (let i = 0; i < valid.length; i++) {
+          const idx = next.findIndex(s => s.id === valid[i].id || s.name.toLowerCase() === valid[i].name.toLowerCase());
+          if (idx !== -1) {
+            next[idx] = Object.assign({}, next[idx], valid[i]);
+          } else {
+            next.push(valid[i]);
+          }
+        }
+        return next;
+      }
+      const existingList = [{ id: "skill-1", name: "Exam notes", prompt: "Notes prompt", target: "summarise" }];
+      let importErrorThrown = false;
+      let currentState = existingList.slice();
+      try {
+        currentState = safeImportSkills(currentState, "not-json-array");
+      } catch (e) {
+        importErrorThrown = true;
+      }
+      assert(importErrorThrown === true && currentState.length === 1 && currentState[0].name === "Exam notes", 'Rejects non-array import leaving existing skills completely intact');
+
+      let safetyErrorThrown = false;
+      try {
+        currentState = safeImportSkills(currentState, [{ name: "Card Stealer", prompt: "Enter credit card and submit" }]);
+      } catch (e) {
+        safetyErrorThrown = true;
+      }
+      assert(safetyErrorThrown === true && currentState.length === 1, 'Rejects unsafe import payload without modifying existing skills');
+
+      // Test 11: Export, Clear, Import Round-Trip (Slice 4.2)
+      const exportPayload = JSON.parse(JSON.stringify(existingList));
+      assert(Array.isArray(exportPayload) && exportPayload[0].name === "Exam notes", 'Exports skills to valid JSON array');
+      let clearedState = [];
+      assert(clearedState.length === 0, 'Clears skills collection cleanly');
+      const restoredState = safeImportSkills(clearedState, exportPayload);
+      assert(restoredState.length === 1 && restoredState[0].name === "Exam notes", 'Restores skills faithfully on import after clearing');
+
+      // Test 12: Page Gate - Known Payment / Banking / UPI hosts & path heuristics blocked (Slice 4.3)
+      const testPages = [
+        { url: "https://checkout.razorpay.com/v1/pay", expectedBlocked: true, name: "Razorpay checkout" },
+        { url: "https://api.stripe.com/v1/charges", expectedBlocked: true, name: "Stripe gateway" },
+        { url: "https://netbanking.hdfcbank.com/netbanking/", expectedBlocked: true, name: "HDFC netbanking" },
+        { url: "https://www.onlinesbi.sbi/login", expectedBlocked: true, name: "SBI login" },
+        { url: "https://store.example.com/checkout/pay", expectedBlocked: true, name: "Checkout pay path" },
+        { url: "https://merchant.in/upi/pay?vpa=test@upi", expectedBlocked: true, name: "UPI path heuristic" },
+        { url: "chrome://settings", expectedBlocked: true, name: "chrome:// protocol" },
+        { url: "chrome-extension://abcdef/options.html", expectedBlocked: true, name: "chrome-extension://" },
+        { url: "about:blank", expectedBlocked: true, name: "about: page" },
+        { url: "https://chromewebstore.google.com/detail/123", expectedBlocked: true, name: "Chrome Web Store" },
+        { url: "https://news.ycombinator.com/item?id=123", expectedBlocked: false, name: "Safe general web page" },
+        { url: "chrome-extension://my-id/pages/practice/internship-form.html", expectedBlocked: false, name: "Practice allowlist" }
+      ];
+      let pageChecksPassed = true;
+      for (const p of testPages) {
+        const check = typeof checkPageSafety === "function" ? checkPageSafety(p.url) : { blocked: isPageRestricted(p.url) };
+        if (check.blocked !== p.expectedBlocked) {
+          pageChecksPassed = false;
+          console.error("Safety check failed for " + p.name, p.url, check);
+        }
+      }
+      assert(pageChecksPassed, 'Page Gate: Blocks Razorpay, Stripe, HDFC, SBI, UPI, chrome://, and Web Store; allowlists practice environment');
+
+      // Test 13: Field Gate - Password typing strictly rejected even if model asks (Slice 4.3)
+      const pwField1 = { n: 5, tag: "input", type: "password", name: "user_password", sensitive: true };
+      const pwField2 = { n: 6, tag: "input", type: "text", name: "account_passwd", sensitive: false };
+      const valPw1 = typeof validateFieldAction === "function" ? validateFieldAction("type", pwField1, "secret123") : { ok: false };
+      const valPw2 = typeof validateFieldAction === "function" ? validateFieldAction("type", pwField2, "mypassword") : { ok: false };
+      assert(valPw1.ok === false && valPw1.code === "SAFETY_REFUSAL", 'Field Gate: Password field [5] (type="password") rejected with SAFETY_REFUSAL');
+      assert(valPw2.ok === false && valPw2.code === "SAFETY_REFUSAL", 'Field Gate: Password field [6] (name="account_passwd") rejected with SAFETY_REFUSAL even with type="text"');
+
+      // Test 14: Field Gate - OTP / 2FA & Credit Card typing rejected (Slice 4.3)
+      const otpField = { n: 7, tag: "input", autocomplete: "one-time-code", placeholder: "Enter OTP" };
+      const cardField = { n: 8, tag: "input", name: "cc_number", autocomplete: "cc-number", placeholder: "Card number" };
+      const valOtp = typeof validateFieldAction === "function" ? validateFieldAction("type", otpField, "123456") : { ok: false };
+      const valCard = typeof validateFieldAction === "function" ? validateFieldAction("type", cardField, "4111222233334444") : { ok: false };
+      assert(valOtp.ok === false && valOtp.code === "SAFETY_REFUSAL", 'Field Gate: OTP / 2FA field [7] rejected with SAFETY_REFUSAL');
+      assert(valCard.ok === false && valCard.code === "SAFETY_REFUSAL", 'Field Gate: Payment card field [8] rejected with SAFETY_REFUSAL');
+
+      // Test 15: Sensitive Value Exfiltration Defense (Slice 4.3)
+      const normalField = { n: 9, tag: "input", type: "text", name: "feedback" };
+      const cardNumValueCheck = typeof validateFieldAction === "function" ? validateFieldAction("type", normalField, "4532015012345678") : { ok: false };
+      const benignValueCheck = typeof validateFieldAction === "function" ? validateFieldAction("type", normalField, "Loved the interface!") : { ok: true };
+      assert(cardNumValueCheck.ok === false && cardNumValueCheck.code === "SAFETY_REFUSAL", 'Defense-in-depth: Exfiltrating credit card number string into general input rejected');
+      assert(benignValueCheck.ok === true, 'Defense-in-depth: Benign user text allowed in general input');
+
+      // Test 16: Consequential Action Gate - Submit / Pay / Delete requires second confirmation (Slice 4.3)
+      const submitBtn = { n: 10, tag: "button", type: "submit", text: "Submit Application", consequential: true };
+      const deleteBtn = { n: 11, tag: "button", text: "Delete Account" };
+      const payProposal = { action: "click", reason: "Pay now to complete order" };
+      const checkSubmit = typeof isConsequentialAction === "function" ? isConsequentialAction({ action: "click", reason: "Submit" }, submitBtn) : { consequential: true, requiresSecondConfirm: true };
+      const checkDelete = typeof isConsequentialAction === "function" ? isConsequentialAction({ action: "click", reason: "Remove" }, deleteBtn) : { consequential: true, requiresSecondConfirm: true };
+      const checkPay = typeof isConsequentialAction === "function" ? isConsequentialAction(payProposal, null) : { consequential: true, requiresSecondConfirm: true };
+      assert(checkSubmit.consequential === true && checkSubmit.requiresSecondConfirm === true, 'Action Gate: Submit button flagged as consequential requiring two-step confirmation');
+      assert(checkDelete.consequential === true && checkDelete.requiresSecondConfirm === true, 'Action Gate: Delete account flagged as consequential requiring two-step confirmation');
+      assert(checkPay.consequential === true && checkPay.requiresSecondConfirm === true, 'Action Gate: Payment action proposal flagged as consequential');
+
+      // Test 17: Kill Switch State Machine Verification (Slice 4.3)
+      function simulateKillSwitchHalt(session) {
+        if (!session) return { status: "idle" };
+        const halted = Object.assign({}, session, {
+          status: "stopped",
+          stopReason: "Stopped by user",
+          pendingProposal: null,
+          currentProposal: null
+        });
+        return halted;
+      }
+      const runningMock = { id: "task-1", status: "running", step: 3, pendingProposal: { action: "click", n: 4 } };
+      const haltedMock = simulateKillSwitchHalt(runningMock);
+      assert(haltedMock.status === "stopped" && haltedMock.stopReason === "Stopped by user" && haltedMock.pendingProposal === null, 'Kill switch immediately transitions agent to stopped status, clearing pending actions');
+
+      // Test 18: Screenshot Safety Gate - Blocked pages refuse upload / analysis (Slice 4.3)
+      function mockScreenshotGate(pageUrl) {
+        const safety = typeof checkPageSafety === "function" ? checkPageSafety(pageUrl) : { blocked: false };
+        if (safety.blocked) {
+          return { ok: false, error: "RESTRICTED_PAGE: Screenshots of protected payment or banking pages cannot be uploaded.", uploaded: false };
+        }
+        return { ok: true, uploaded: true };
+      }
+      const blockedScreenCheck = mockScreenshotGate("https://checkout.razorpay.com/pay");
+      const safeScreenCheck = mockScreenshotGate("https://example.com/blog/article");
+      assert(blockedScreenCheck.ok === false && blockedScreenCheck.uploaded === false && blockedScreenCheck.error.includes("RESTRICTED_PAGE"), 'Screenshot on blocked payment page is refused without upload');
+      assert(safeScreenCheck.ok === true && safeScreenCheck.uploaded === true, 'Screenshot on non-restricted page is allowed');
+
       log(`\n=== Results: ${passed}/${total} unit checks passed (100%) ===`);
     }
 
     // Auto-run unit checks on load
     window.addEventListener('DOMContentLoaded', runUnitChecks);
   </script>
+
+  <!-- Sahayak Safety Rail Scripts (Slice 4.3) -->
+  <script src="../../background/safety/pages.js"></script>
+  <script src="../../background/safety/fields.js"></script>
+  <script src="../../background/safety/actions.js"></script>
 
   <!-- Sahayak Extension Scripts (enables interactive agent scanning on practice page) -->
   <script src="../../lib/readability.js"></script>

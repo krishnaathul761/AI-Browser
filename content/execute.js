@@ -8,7 +8,8 @@
  */
 
 (function () {
-  const SENSITIVE_REGEX = /(password|passwd|otp|pin|cvv|cvc|card[-_]?num|credit[-_]?card|secret|ssn)/i;
+  const SENSITIVE_REGEX =
+    /(password|passwd|passcode|pin|otp|totp|2fa|cvv|cvc|card[-_]?num|credit[-_]?card|debit[-_]?card|secret|ssn|aadhaar|pan[-_]?card)/i;
 
   /**
    * Check if an element is prohibited from automated typing.
@@ -19,7 +20,7 @@
     if (type === "password") return true;
 
     const autocomplete = (el.getAttribute("autocomplete") || "").toLowerCase();
-    if (/(one-time-code|cc-number|cc-csc|cc-exp|current-password|new-password)/i.test(autocomplete)) {
+    if (/(one-time-code|cc-number|cc-csc|cc-exp|current-password|new-password|transaction-amount)/i.test(autocomplete)) {
       return true;
     }
 

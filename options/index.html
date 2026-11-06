@@ -59,6 +59,26 @@
               <button type="button" class="clear-key-btn" id="clear-groq-btn" hidden>Clear</button>
             </div>
           </div>
+
+          <!-- Mem0 API Key (Optional) -->
+          <div class="field">
+            <label for="mem0-key">
+              Mem0 API key
+              <span class="optional-tag">optional · enables cross-session memory</span>
+            </label>
+            <input
+              id="mem0-key"
+              name="mem0ApiKey"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Paste key, then Save"
+            />
+            <div class="key-actions">
+              <p class="hint" id="mem0-hint">app.mem0.ai · cross-session memory</p>
+              <button type="button" class="clear-key-btn" id="clear-mem0-btn" hidden>Clear</button>
+            </div>
+          </div>
         </div>
 
         <!-- ── Active provider ──────────────────────────────────────────── -->
@@ -122,6 +142,77 @@
           </select>
           <p class="hint">Used by "Translate" in the right-click context menu.</p>
         </div>
+
+        <!-- ── User Profile Memory (Slice 4.1) ────────────────────────── -->
+        <fieldset class="profile-fieldset">
+          <legend>User Profile Memory</legend>
+          <p class="hint" style="margin-bottom: 12px;">
+            Stored locally on this device. Injected into form applications and draft replies without retyping.
+          </p>
+
+          <div class="field-block">
+            <label for="profile-name">Full Name</label>
+            <input
+              id="profile-name"
+              name="profileName"
+              type="text"
+              autocomplete="name"
+              placeholder="e.g. Priya Sharma"
+            />
+          </div>
+
+          <div class="field-block">
+            <label for="profile-college">College / University</label>
+            <input
+              id="profile-college"
+              name="profileCollege"
+              type="text"
+              placeholder="e.g. IIT Bombay"
+            />
+          </div>
+
+          <div class="field-block">
+            <label for="profile-skills">Skills</label>
+            <input
+              id="profile-skills"
+              name="profileSkills"
+              type="text"
+              placeholder="e.g. JavaScript, Python, React, Data Analysis"
+            />
+            <p class="hint">Comma-separated list of your technical or domain skills.</p>
+          </div>
+
+          <div class="field-block">
+            <label for="profile-links">Links / Portfolio</label>
+            <input
+              id="profile-links"
+              name="profileLinks"
+              type="text"
+              placeholder="e.g. https://github.com/priyasharma"
+            />
+            <p class="hint">GitHub, LinkedIn, personal website, or portfolio URL.</p>
+          </div>
+
+          <div class="field-block">
+            <label for="profile-tone">Preferred Reply Tone</label>
+            <select id="profile-tone" name="profileTone">
+              <option value="professional">Professional</option>
+              <option value="casual">Casual &amp; Friendly</option>
+              <option value="formal">Formal &amp; Polite</option>
+              <option value="concise">Direct &amp; Concise</option>
+              <option value="enthusiastic">Enthusiastic</option>
+            </select>
+            <p class="hint">Used when drafting replies to messages or emails.</p>
+          </div>
+
+          <div class="field-block">
+            <label for="profile-language">Preferred Profile Language</label>
+            <select id="profile-language" name="profileLanguage">
+              <option value="en">English</option>
+              <option value="hinglish">Hinglish</option>
+            </select>
+          </div>
+        </fieldset>
 
         <div id="provider-status" class="provider-status" hidden></div>
 

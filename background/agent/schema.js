@@ -228,7 +228,16 @@ function validateAgentAction(rawResponse, actionMap = []) {
   }
 
   const label = targetElement.text || targetElement.label || targetElement.name || targetElement.placeholder || targetElement.tag || "";
-  const consequential = Boolean(targetElement.consequential);
+  const rawVal = target.value ?? target.text ?? target.val ?? target.input ?? "";
+  const val = typeof rawVal === "string" ? rawVal.slice(0, 500) : String(rawVal ?? "");
+
+  // Consequential action check (Slice 4.3):
+  const consequentialInfo = typeof isConsequentialAction === "function"
+    ? isConsequentialAction({ action, reason, label, value: val }, targetElement)
+    : { consequential: Boolean(targetElement.consequential), requiresSecondConfirm: Boolean(targetElement.consequential) };
+  const consequential = consequentialInfo.consequential;
+  const requiresSecondConfirm = consequentialInfo.requiresSecondConfirm;
+  const consequentialReason = consequentialInfo.reason || "";
 
   if (action === "click") {
     return {
@@ -239,16 +248,23 @@ function validateAgentAction(rawResponse, actionMap = []) {
         reason,
         label,
         consequential,
+        requiresSecondConfirm,
+        consequentialReason,
         targetElement,
       },
     };
   }
 
-  const rawVal = target.value ?? target.text ?? target.val ?? target.input ?? "";
-  const val = typeof rawVal === "string" ? rawVal.slice(0, 500) : String(rawVal ?? "");
-
   if (action === "type") {
-    if (targetElement.sensitive) {
+    if (typeof validateFieldAction === "function") {
+      const fieldCheck = validateFieldAction(action, targetElement, val);
+      if (!fieldCheck.ok) {
+        return {
+          ok: false,
+          error: fieldCheck.error,
+        };
+      }
+    } else if (targetElement.sensitive) {
       return {
         ok: false,
         error: `SAFETY_REFUSAL: Target element [${n}] is marked sensitive (password/card/OTP). Typing is blocked.`,
@@ -263,6 +279,8 @@ function validateAgentAction(rawResponse, actionMap = []) {
         reason,
         label,
         consequential,
+        requiresSecondConfirm,
+        consequentialReason,
         targetElement,
       },
     };
@@ -278,6 +296,8 @@ function validateAgentAction(rawResponse, actionMap = []) {
         reason,
         label,
         consequential,
+        requiresSecondConfirm,
+        consequentialReason,
         targetElement,
       },
     };

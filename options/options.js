@@ -5,9 +5,18 @@ const clearGeminiBtn  = document.getElementById("clear-gemini-btn");
 const groqInput       = document.getElementById("groq-key");
 const groqHint        = document.getElementById("groq-hint");
 const clearGroqBtn    = document.getElementById("clear-groq-btn");
+const mem0Input       = document.getElementById("mem0-key");
+const mem0Hint        = document.getElementById("mem0-hint");
+const clearMem0Btn    = document.getElementById("clear-mem0-btn");
 const translateSelect = document.getElementById("translate-target");
 const statusEl        = document.getElementById("status");
 const providerStatus  = document.getElementById("provider-status");
+const profileNameInput      = document.getElementById("profile-name");
+const profileCollegeInput   = document.getElementById("profile-college");
+const profileSkillsInput    = document.getElementById("profile-skills");
+const profileLinksInput     = document.getElementById("profile-links");
+const profileToneSelect     = document.getElementById("profile-tone");
+const profileLanguageSelect = document.getElementById("profile-language");
 
 // ── Status banner ─────────────────────────────────────────────────────────────
 
@@ -43,7 +52,7 @@ function updateProviderStatus(settings) {
     } else if (hasGemini) {
       text = "✓ Gemini is active · Add Groq key for automatic fallback on rate limits";
     } else {
-      text = "✓ Groq is active (only key saved) · Add Gemini key to enable YouTube video summaries &amp; vision";
+      text = "✓ Groq is active (only key saved) · Add Gemini key to enable YouTube video summaries & vision";
     }
   } else if (provider === "gemini") {
     text = hasGemini
@@ -98,6 +107,19 @@ function applySettings(settings) {
     : "console.groq.com · free tier available";
   clearGroqBtn.hidden = !settings.groqApiKey;
 
+  if (mem0Input) {
+    mem0Input.value = "";
+    mem0Input.placeholder = settings.mem0ApiKey
+      ? "Key saved — paste a new key to replace it"
+      : "Paste key, then Save";
+    if (mem0Hint) {
+      mem0Hint.textContent = settings.mem0ApiKey
+        ? "Key saved. Mem0 cross-session memory is active."
+        : "app.mem0.ai · cross-session memory";
+    }
+    if (clearMem0Btn) clearMem0Btn.hidden = !settings.mem0ApiKey;
+  }
+
   // Provider radio
   const provider = settings.preferredProvider || "auto";
   const providerRadio = form.querySelector('input[name="preferredProvider"][value="' + provider + '"]');
@@ -114,6 +136,20 @@ function applySettings(settings) {
   }
 
   updateProviderStatus(settings);
+}
+
+function applyProfile(profile) {
+  if (!profile) return;
+  if (profileNameInput) profileNameInput.value = profile.name || "";
+  if (profileCollegeInput) profileCollegeInput.value = profile.college || "";
+  if (profileSkillsInput) profileSkillsInput.value = profile.skills || "";
+  if (profileLinksInput) profileLinksInput.value = profile.links || "";
+  if (profileToneSelect && profile.preferredTone) {
+    profileToneSelect.value = profile.preferredTone;
+  }
+  if (profileLanguageSelect && profile.preferredLanguage) {
+    profileLanguageSelect.value = profile.preferredLanguage;
+  }
 }
 
 // ── Live provider status update as user changes radio ─────────────────────────
@@ -143,6 +179,7 @@ async function clearKey(keyName) {
 
 clearGeminiBtn.addEventListener("click", () => clearKey("geminiApiKey"));
 clearGroqBtn.addEventListener("click",   () => clearKey("groqApiKey"));
+if (clearMem0Btn) clearMem0Btn.addEventListener("click", () => clearKey("mem0ApiKey"));
 
 // ── Save ──────────────────────────────────────────────────────────────────────
 
@@ -165,8 +202,22 @@ form.addEventListener("submit", async (event) => {
     const newGroq = groqInput.value.trim();
     if (newGroq) patch.groqApiKey = newGroq;
 
+    const newMem0 = mem0Input ? mem0Input.value.trim() : "";
+    if (newMem0) patch.mem0ApiKey = newMem0;
+
     const saved = await send("SETTINGS_SET", patch);
     applySettings(saved);
+
+    const profilePatch = {
+      name:              profileNameInput ? profileNameInput.value.trim() : "",
+      college:           profileCollegeInput ? profileCollegeInput.value.trim() : "",
+      skills:            profileSkillsInput ? profileSkillsInput.value.trim() : "",
+      links:             profileLinksInput ? profileLinksInput.value.trim() : "",
+      preferredTone:     profileToneSelect ? profileToneSelect.value : "professional",
+      preferredLanguage: profileLanguageSelect ? profileLanguageSelect.value : "en",
+    };
+    const savedProfile = await send("PROFILE_SET", profilePatch);
+    applyProfile(savedProfile);
     setStatus("Saved.", "ok");
   } catch (err) {
     setStatus(err.message || "Could not save settings.", "err");
@@ -175,8 +226,11 @@ form.addEventListener("submit", async (event) => {
 
 // ── Load on open ──────────────────────────────────────────────────────────────
 
-send("SETTINGS_GET")
-  .then(applySettings)
+Promise.all([send("SETTINGS_GET"), send("PROFILE_GET")])
+  .then(([settings, profile]) => {
+    applySettings(settings);
+    applyProfile(profile);
+  })
   .catch((err) => {
     setStatus(err.message || "Could not load settings.", "err");
   });

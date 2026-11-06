@@ -60,13 +60,17 @@ function buildExplainPrompt(selectedText, language) {
  * @param {string} language - "en" | "hinglish"
  * @returns {string} assembled prompt
  */
-function buildSummaryPrompt(article, language) {
+function buildSummaryPrompt(article, language, customInstruction) {
+  const customNote = customInstruction && customInstruction.trim()
+    ? "Special Skill Guideline: " + customInstruction.trim() + "\nAdopt this focus while adhering to the required JSON schema below.\n\n"
+    : "";
   const fallbackNote = article.isFallback
     ? "Note: full article text could not be cleanly extracted; this may include navigation or footer text.\n\n"
     : "";
 
   return (
     "You are a helpful reading assistant. Read the article text below and return a JSON object.\n" +
+    customNote +
     "Return ONLY valid JSON — no markdown fences, no extra keys, no explanation, no preamble.\n" +
     "Your entire response must be a single JSON object starting with { and ending with }.\n\n" +
     "Required JSON shape:\n" +
@@ -173,26 +177,41 @@ function buildTranslatePrompt(fields, language) {
  * @param {{ role: "user"|"assistant", text: string }[]} history - prior turns
  * @param {string} userMessage - the new user question
  * @param {string} language    - "en" | "hinglish"
+ * @param {Array<{ memory: string }|string>} [memories] - optional Mem0 cross-session memories
  * @returns {string} assembled prompt
  */
-function buildChatPrompt(pageContext, history, userMessage, language) {
+function buildChatPrompt(pageContext, history, userMessage, language, memories) {
   const historyText = history.length > 0
     ? history.map((m) => (m.role === "user" ? "User: " : "Assistant: ") + m.text).join("\n") + "\n"
     : "";
 
+  let memoryContext = "";
+  if (Array.isArray(memories) && memories.length > 0) {
+    const memList = memories
+      .map((m) => "- " + (typeof m === "string" ? m : (m.memory || m.text || "")))
+      .filter((s) => s.trim() !== "-")
+      .join("\n");
+    if (memList) {
+      memoryContext = "User persona & remembered context from past sessions (Mem0):\n" + memList + "\n\n";
+    }
+  }
+
   return (
-    "You are a helpful reading assistant. Answer the user's question using ONLY " +
-    "the page content provided below. Do not use outside knowledge.\n" +
-    "If the answer is not in the page content, say clearly: " +
-    '"I could not find that information on this page."\n' +
-    "Be concise and direct. Do not repeat the question.\n\n" +
+    "You are a helpful reading assistant and personal browser companion.\n\n" +
+    (memoryContext ? memoryContext : "") +
+    "Instructions:\n" +
+    "- If the user asks about past topics, previous chat sessions, their preferences, or remembered context, answer directly from the remembered context above.\n" +
+    "- For questions about the current page, answer using the page content provided below.\n" +
+    "- Always apply the user's remembered preferences (e.g. tone, concise format, domain interests) to optimize your answers.\n" +
+    "- If a question is about the page but the answer is not found in the page content, say clearly: \"I could not find that information on this page.\"\n" +
+    "- Be concise, direct, and helpful. Do not repeat the question.\n\n" +
     "Page title: " + (pageContext.title || "Unknown") + "\n" +
     "Page URL: " + (pageContext.url || "") + "\n\n" +
     "Page content:\n" +
     '"""\n' +
     (pageContext.text || "").trim().slice(0, 10000) +
     '\n"""\n\n' +
-    (historyText ? "Conversation so far:\n" + historyText + "\n" : "") +
+    (historyText ? "Conversation so far in this tab:\n" + historyText + "\n" : "") +
     "User: " + userMessage.trim() + "\n\n" +
     languageSuffix(language)
   );
@@ -226,13 +245,48 @@ function buildTranslateSelectionPrompt(selectedText, targetLang, language) {
  * @param {string} language     - "en" | "hinglish"
  * @returns {string} assembled prompt
  */
-function buildDraftPrompt(selectedText, language) {
+function buildDraftPrompt(selectedText, language, profile) {
+  let toneDesc = "polite and professional";
+  if (profile && typeof profile.preferredTone === "string" && profile.preferredTone.trim()) {
+    const tone = profile.preferredTone.trim().toLowerCase();
+    if (tone === "casual") toneDesc = "casual and friendly";
+    else if (tone === "formal") toneDesc = "formal and polite";
+    else if (tone === "concise") toneDesc = "direct and concise";
+    else if (tone === "enthusiastic") toneDesc = "warm and enthusiastic";
+    else toneDesc = profile.preferredTone.trim();
+  }
+
+  let profileContext = "";
+  if (profile) {
+    const details = [];
+    if (profile.name && profile.name.trim()) {
+      details.push("Author name: " + profile.name.trim());
+    }
+    if (profile.college && profile.college.trim()) {
+      details.push("College / Affiliation: " + profile.college.trim());
+    }
+    if (profile.skills && profile.skills.trim()) {
+      details.push("Skills / Expertise: " + profile.skills.trim());
+    }
+    if (profile.links && profile.links.trim()) {
+      details.push("Links / Portfolio: " + profile.links.trim());
+    }
+    if (details.length > 0) {
+      profileContext =
+        "Author Profile (use only if relevant to tone, personal context, or sign-off):\n" +
+        details.join("\n");
+      if (profile.name && profile.name.trim()) {
+        profileContext += '\nIf signing off, sign off with "' + profile.name.trim() + '".';
+      }
+    }
+  }
   return (
-    "You are a helpful writing assistant. Draft a polite and professional reply " +
+    "You are a helpful writing assistant. Draft a " + toneDesc + " reply " +
     "to the following text. The reply should be concise (2–4 sentences), " +
     "suitable for email, LinkedIn, or a forum post. " +
     "Do not include a subject line. Do not address it to a specific person. " +
     "Return only the draft reply text.\n\n" +
+    (profileContext ? profileContext + "\n\n" : "") +
     "Text to reply to:\n" +
     '"""\n' +
     selectedText.trim() +
@@ -311,7 +365,7 @@ function buildFindElementPrompt(query, elements, language) {
  * @param {string} language - "en" | "hinglish"
  * @returns {string} assembled prompt
  */
-function buildAgentStepPrompt(goal, history, elements, language) {
+function buildAgentStepPrompt(goal, history, elements, language, profile) {
   // Cap to 50 elements to keep prompt concise, responsive, and avoid TPM rate-limit delays
   const subset = Array.isArray(elements) && elements.length > 50 ? elements.slice(0, 50) : (elements || []);
 
@@ -343,6 +397,37 @@ function buildAgentStepPrompt(goal, history, elements, language) {
           .join("\n")
       : "No previous actions yet (Step 1).";
 
+  // Inject profile memory only for form-filling or when goal mentions profile (Slice 4.1)
+  let profileSection = "";
+  const isFormFill =
+    /profile/i.test(goal || "") ||
+    /form|fill|apply|application|signup|sign-up|register|registration|internship/i.test(goal || "") ||
+    (Array.isArray(elements) && elements.some((el) =>
+      (el.tag === "input" && el.type !== "submit" && el.type !== "button") ||
+      el.tag === "textarea" ||
+      el.tag === "select"
+    ) && /type|enter|input|complete/i.test(goal || ""));
+
+  if (profile && isFormFill) {
+    const pItems = [];
+    if (profile.name) pItems.push("- Full Name: " + profile.name);
+    if (profile.college) pItems.push("- College / University: " + profile.college);
+    if (profile.skills) pItems.push("- Skills: " + profile.skills);
+    if (profile.links) pItems.push("- Links / Portfolio: " + profile.links);
+    if (profile.preferredTone) pItems.push("- Preferred Tone: " + profile.preferredTone);
+
+    if (pItems.length > 0) {
+      profileSection =
+        "\n\nUser Profile Memory (Available to use when filling form inputs or when goal mentions 'profile'):\n" +
+        pItems.join("\n") +
+        "\n\nProfile Form-Filling Guidelines:\n" +
+        "- When proposing 'type' actions on form fields matching user details (e.g., name, college, skills, links/portfolio), use the profile values above.\n" +
+        "- If a form has separate First Name and Last Name inputs and the profile has a Full Name (e.g. 'Priya Sharma'), enter the first name in First Name ('Priya') and the last name in Last Name ('Sharma').\n" +
+        "- Use College for college/university inputs, Skills for skills/experience/domain, and Links for portfolio/website/github/linkedin.\n" +
+        "- When the user's goal mentions 'from my profile' or asks to fill a form, always draw field values from this profile instead of using placeholder or made-up data.";
+    }
+  }
+
   return (
     "You are Sahayak, an autonomous browser agent. You help users achieve goals by proposing ONE action at a time.\n" +
     "Every step you propose requires human approval before execution.\n\n" +
@@ -354,6 +439,7 @@ function buildAgentStepPrompt(goal, history, elements, language) {
     "\n\n" +
     "Current page interactive elements:\n" +
     compactElements +
+    profileSection +
     "\n\n" +
     "Instructions:\n" +
     "1. Analyze the user's goal, the previous actions taken, and the current page elements.\n" +
@@ -364,10 +450,11 @@ function buildAgentStepPrompt(goal, history, elements, language) {
     '   - select: { "action": "select", "n": <element number>, "value": "<option value or label>", "reason": "<reason>" }\n' +
     '   - scroll: { "action": "scroll", "direction": "up" | "down", "reason": "<reason>" }\n' +
     '   - done:   { "action": "done", "reason": "<explanation of how goal is completed>" }\n' +
-    "4. Safety Rules:\n" +
+    "4. Profile Data: If User Profile Memory is present and the goal asks to fill form fields or mentions profile, use the exact values from profile memory for 'type' actions.\n" +
+    "5. Safety Rules:\n" +
     "   - NEVER propose typing into [SENSITIVE] elements (passwords, PINs, card numbers).\n" +
     '   - If all steps are complete or the goal is achieved, return action "done".\n' +
-    "5. Return ONLY a single raw JSON object starting with { and ending with }. No markdown fences. No other text.\n\n" +
+    "6. Return ONLY a single raw JSON object starting with { and ending with }. No markdown fences. No other text.\n\n" +
     languageSuffix(language)
   );
 }

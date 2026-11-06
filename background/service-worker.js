@@ -1,9 +1,13 @@
 importScripts(
   "/lib/utils.js",
+  "/background/safety/pages.js",
+  "/background/safety/fields.js",
+  "/background/safety/actions.js",
   "/background/ai/prompts.js",
   "/background/ai/gemini.js",
   "/background/ai/groq.js",
   "/background/ai/ai.js",
+  "/background/ai/mem0.js",
   "/background/ai/cache.js",
   "/background/agent/schema.js",
   "/background/agent/persist.js",

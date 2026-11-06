@@ -39,7 +39,7 @@
         </button>
         <button type="button" class="tab" data-tab="chat" id="tab-chat">Chat</button>
         <button type="button" class="tab" data-tab="agent" id="tab-agent">Agent</button>
-        <button type="button" class="tab" data-tab="skills" disabled title="Coming in Week 4">Skills</button>
+        <button type="button" class="tab" data-tab="memory" id="tab-memory">Memory</button>
       </nav>
 
       <main class="main">
@@ -154,6 +154,7 @@
           <!-- ── Browser Errand (Slice 3.3) ────────────────────────── -->
           <div class="agent-errand-section" id="agent-errand-section">
             <p class="section-label">Automate an errand</p>
+
             <div class="agent-goal-box">
               <textarea
                 id="agent-goal-input"
@@ -238,7 +239,7 @@
               <strong>Errand complete</strong>
               <p id="agent-complete-msg">All planned steps finished successfully.</p>
             </div>
-            <button type="button" class="secondary-btn" id="agent-reset-btn">New errand</button>
+            <button type="button" class="secondary-btn" id="agent-reset-btn">New</button>
           </div>
 
           <!-- Errand History Log -->
@@ -334,6 +335,199 @@
           </div>
         </section>
 
+        <!-- ── Memory & Skills view ──────────────────────────────────── -->
+        <section id="view-memory" class="view memory-view" data-view="memory" hidden>
+          <div class="memory-header">
+            <h2 class="memory-title">Memory &amp; Skills</h2>
+            <p class="memory-sub">Local profile memory and reusable skills saved securely in your browser.</p>
+          </div>
+
+          <!-- Section 1: User Profile Memory -->
+          <div class="memory-card">
+            <div class="memory-card-header">
+              <div class="memory-card-title-group">
+                <span class="memory-card-icon">👤</span>
+                <strong class="memory-card-title">User Profile Memory</strong>
+              </div>
+              <span class="memory-pill">Local Only</span>
+            </div>
+            <p class="memory-card-desc">
+              Auto-fills job/internship applications and tailors draft reply tone without retyping.
+            </p>
+
+            <p id="mem-status" class="memory-status" hidden></p>
+
+            <form id="mem-profile-form" class="memory-form">
+              <div class="mem-field-row">
+                <div class="mem-field">
+                  <label for="mem-name">Full Name</label>
+                  <input type="text" id="mem-name" placeholder="e.g. Priya Sharma" autocomplete="name" />
+                </div>
+                <div class="mem-field">
+                  <label for="mem-college">College / University</label>
+                  <input type="text" id="mem-college" placeholder="e.g. IIT Bombay" />
+                </div>
+              </div>
+
+              <div class="mem-field">
+                <label for="mem-skills">Technical &amp; Domain Skills</label>
+                <input type="text" id="mem-skills" placeholder="e.g. JavaScript, Python, React, Data Analysis" />
+              </div>
+
+              <div class="mem-field">
+                <label for="mem-links">Links / Portfolio</label>
+                <input type="text" id="mem-links" placeholder="e.g. https://github.com/priyasharma" />
+              </div>
+
+              <div class="mem-field-row">
+                <div class="mem-field">
+                  <label for="mem-tone">Preferred Reply Tone</label>
+                  <select id="mem-tone" class="mem-select">
+                    <option value="professional">Professional</option>
+                    <option value="casual">Casual &amp; Friendly</option>
+                    <option value="formal">Formal &amp; Polite</option>
+                    <option value="concise">Direct &amp; Concise</option>
+                    <option value="enthusiastic">Enthusiastic</option>
+                  </select>
+                </div>
+                <div class="mem-field">
+                  <label for="mem-language">Profile Language</label>
+                  <select id="mem-language" class="mem-select">
+                    <option value="en">English</option>
+                    <option value="hinglish">Hinglish</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="mem-actions-row">
+                <button type="submit" class="primary-btn" id="mem-save-btn">Save Profile</button>
+                <button type="button" class="secondary-btn" id="mem-clear-btn">Clear</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Section 2: Reusable Skills Library -->
+          <div class="memory-card">
+            <div class="memory-card-header">
+              <div class="memory-card-title-group">
+                <span class="memory-card-icon">⚡</span>
+                <strong class="memory-card-title">Skills</strong>
+                <span id="skills-count-badge" class="skills-count-badge">0</span>
+              </div>
+              <div class="skills-header-actions">
+                <button type="button" class="primary-btn-sm skill-new-btn" id="skills-add-toggle-btn">New skill</button>
+                <button type="button" class="memory-text-btn" id="skills-export-btn" title="Export skills as JSON">
+                  Export
+                </button>
+                <label class="memory-text-btn" id="skills-import-label" title="Import skills from JSON">
+                  Import
+                  <input type="file" id="skills-import-file" accept=".json" hidden />
+                </label>
+              </div>
+            </div>
+            <p class="memory-card-desc">
+              Custom instructions integrated across Summarise, Chat, and Agent tabs.
+            </p>
+
+            <p id="skills-status" class="memory-status" hidden></p>
+
+            <!-- Collapsible Add/Edit Skill Form (matching user design) -->
+            <div id="skill-editor-card" class="skill-editor-card" hidden>
+              <input type="hidden" id="skill-id-input" value="" />
+              <h4 id="skill-editor-title">New skill</h4>
+              <div class="mem-field">
+                <label for="skill-name-input">Name</label>
+                <input type="text" id="skill-name-input" placeholder="e.g. Exam notes" />
+              </div>
+              <div class="mem-field">
+                <label for="skill-prompt-input">Prompt</label>
+                <textarea id="skill-prompt-input" rows="3" placeholder="What should Sahayak do on this page?"></textarea>
+              </div>
+              <div class="mem-field">
+                <label for="skill-target-input">Mode</label>
+                <select id="skill-target-input" class="mem-select">
+                  <option value="agent">Act</option>
+                  <option value="summarise">Summarise</option>
+                  <option value="chat">Chat</option>
+                </select>
+              </div>
+              <div class="mem-field" style="margin-top: 8px;">
+                <label class="settings-choice" style="margin-bottom:0; padding:7px 10px; font-size:11px;">
+                  <input type="checkbox" id="skill-use-profile" />
+                  <span>Use my profile when running</span>
+                </label>
+              </div>
+              <div class="mem-actions-row" style="margin-top: 12px;">
+                <button type="button" class="primary-btn" id="skill-save-btn">Save</button>
+                <button type="button" class="secondary-btn" id="skill-cancel-btn">Cancel</button>
+              </div>
+            </div>
+
+            <!-- Skills List -->
+            <div id="skills-list" class="skills-list"></div>
+
+            <!-- Skills Footer Actions (Reset, Clear) -->
+            <div class="skills-footer-actions">
+              <div class="skills-footer-secondary" style="margin-left: auto;">
+                <button type="button" class="memory-text-btn" id="skills-reset-btn" title="Reset to default seed skills">Reset</button>
+                <button type="button" class="memory-text-btn" id="skills-clear-btn" title="Clear all skills">Clear</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 3: Cloud Cross-Session Memory (Mem0) -->
+          <div class="memory-card">
+            <div class="memory-card-header">
+              <div class="memory-card-title-group">
+                <span class="memory-card-icon">🧠</span>
+                <strong class="memory-card-title">Mem0</strong>
+                <span id="mem0-status-pill" class="memory-pill memory-pill--disconnected">Disconnected</span>
+              </div>
+              <div class="skills-header-actions">
+                <button type="button" class="memory-text-btn" id="mem0-refresh-btn" title="Refresh learned memories">
+                  Refresh
+                </button>
+              </div>
+            </div>
+            <p class="memory-card-desc">
+              Learns user facts &amp; preferences automatically across chat sessions using Mem0 cloud graph.
+            </p>
+
+            <p id="mem0-status-msg" class="memory-status" hidden></p>
+
+            <div class="mem-field">
+              <label for="mem0-key-input">Mem0 API Key</label>
+              <input type="password" id="mem0-key-input" placeholder="e.g. m0-..." autocomplete="off" spellcheck="false" />
+            </div>
+
+            <div class="mem-field-row">
+              <div class="mem-field">
+                <label for="mem0-user-input">User Id</label>
+                <input type="text" id="mem0-user-input" placeholder="sahayak_user" />
+              </div>
+              <div class="mem-field" style="display:flex; flex-direction:column; justify-content:flex-end;">
+                <label class="settings-choice" style="margin-bottom:0; padding:7px 10px; font-size:11px;">
+                  <input type="checkbox" id="mem0-enable-toggle" />
+                  <span>Enable Mem0</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="mem-actions-row">
+              <button type="button" class="primary-btn" id="mem0-save-btn">Save</button>
+              <button type="button" class="secondary-btn" id="mem0-disconnect-btn">Disconnect</button>
+            </div>
+
+            <div class="mem0-memories-container" id="mem0-memories-container" style="margin-top:12px;">
+              <div class="memory-card-header" style="margin-bottom:6px;">
+                <strong style="font-size:11.5px; color:var(--ink);">Learned Facts &amp; Context</strong>
+                <span id="mem0-count-badge" class="skills-count-badge">0</span>
+              </div>
+              <div id="mem0-list" class="skills-list"></div>
+            </div>
+          </div>
+        </section>
+
         <!-- ── Settings view (inline, no separate tab) ──────────────────── -->
         <section id="view-settings" class="view settings-view" data-view="settings" hidden>
 
@@ -386,6 +580,23 @@
                 />
                 <p class="settings-hint" id="s-groq-hint">console.groq.com · free tier available</p>
                 <button type="button" class="settings-clear-btn" id="s-clear-groq" hidden>Clear key</button>
+              </div>
+
+              <div class="settings-field">
+                <label for="s-mem0-key">
+                  <span class="provider-dot" style="background:#8b5cf6;"></span>
+                  Mem0 API key (Optional)
+                </label>
+                <input
+                  id="s-mem0-key"
+                  name="mem0ApiKey"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="Paste key, then Save"
+                />
+                <p class="settings-hint" id="s-mem0-hint">app.mem0.ai · cross-session memory</p>
+                <button type="button" class="settings-clear-btn" id="s-clear-mem0" hidden>Clear key</button>
               </div>
             </div>
 
