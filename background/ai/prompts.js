@@ -426,18 +426,31 @@ function buildAgentStepPrompt(goal, history, elements, language, profile) {
     if (profile.links) pItems.push("- Links / Portfolio: " + profile.links);
     if (profile.preferredTone) pItems.push("- Preferred Tone: " + profile.preferredTone);
 
+    // Include all custom user profile memory details added by user
+    if (Array.isArray(profile.customFields)) {
+      for (const cf of profile.customFields) {
+        if (cf && cf.label && cf.value) {
+          pItems.push(`- ${cf.label}: ${cf.value}`);
+        }
+      }
+    }
+
     if (pItems.length > 0) {
       profileSection =
-        "\n\nUser Profile Memory (Available to use when filling form inputs or when goal mentions 'profile'):\n" +
+        "\n\nUser Profile Memory (The ONLY personal details you are authorized to fill):\n" +
         pItems.join("\n") +
-        "\n\nProfile Form-Filling Guidelines:\n" +
-        "- When proposing 'type' actions on form fields matching user details (e.g., name, college, skills, links/portfolio), use the profile values above.\n" +
-        "- If a form has separate First Name and Last Name inputs and the profile has a Full Name (e.g. 'Priya Sharma'), enter the first name in First Name ('Priya') and the last name in Last Name ('Sharma').\n" +
-        "- Use College for college/university inputs, Skills for skills/experience/domain, and Links for portfolio/website/github/linkedin.\n" +
-        "- For Degree, Year, or Domain selects: choose a matching option directly from the element's [SELECT OPTIONS] (e.g. 'btech', '3', 'swe').\n" +
-        "- For skill chips (e.g. Python, React): click 1-3 chips matching user skills. Do NOT click chips marked [ALREADY SELECTED]. Once selected, move to the next field or click Next.\n" +
-        "- For CGPA / Percentage fields: Enter a clean single number (e.g. '8.5' or '9.0' or '85'), NEVER append '/ 10' or '/10' or '%'.\n" +
-        "- When the user's goal mentions 'from my profile' or asks to fill a form, always draw field values from this profile instead of using placeholder or made-up data.";
+        "\n\nSTRICT Profile Memory Form-Filling Constraints:\n" +
+        "- ONLY fill fields that match an item explicitly listed in User Profile Memory above.\n" +
+        "- NEVER invent, hallucinate, guess, or make up values (such as dummy phone numbers, emails, degrees, years, CGPA, or project descriptions) for any field not present in the profile above.\n" +
+        "- If a form input, select, or textarea has NO matching value in User Profile Memory:\n" +
+        "  * DO NOT type fictional or placeholder data into it.\n" +
+        "  * Skip it to fill any other fields that ARE present in User Profile Memory.\n" +
+        "  * Once all profile-matched fields are filled, return action \"done\" with a clear reason asking the user to manually fill the remaining missing fields (e.g. 'Filled Name and College from Profile Memory. Please manually fill Phone Number and Degree as they are not in your memory.').\n" +
+        "- Field Matching:\n" +
+        "  * If form has First Name and Last Name and profile has Full Name (e.g. 'Priya Sharma'), enter 'Priya' in First Name and 'Sharma' in Last Name.\n" +
+        "  * If profile memory contains custom fields (e.g. Phone, Degree, Current Year, CGPA, Branch), use them to fill the respective inputs/selects.\n" +
+        "  * For skill chips, only click chips matching skills listed in User Profile Memory. Do NOT click chips marked [ALREADY SELECTED].\n" +
+        "  * For CGPA / Percentage: enter plain numeric value (e.g. '8.5' or '85'), never append '/10' or '%'.";
     }
   }
 
@@ -462,23 +475,27 @@ function buildAgentStepPrompt(goal, history, elements, language, profile) {
     '   - type:   { "action": "type", "n": <element number>, "value": "<text to type>", "reason": "<reason>" }\n' +
     '   - select: { "action": "select", "n": <element number>, "value": "<option value or label>", "reason": "<reason>" }\n' +
     '   - scroll: { "action": "scroll", "direction": "up" | "down", "reason": "<reason>" }\n' +
-    '   - done:   { "action": "done", "reason": "<explanation of how goal is completed>" }\n' +
-    "4. Dropdowns & Selects:\n" +
+    '   - done:   { "action": "done", "reason": "<explanation of how goal is completed or what user needs to fill>" }\n' +
+    "4. STRICT Memory-Based Form Filling:\n" +
+    "   - When filling forms from Profile Memory, fill ONLY details that are explicitly present in User Profile Memory.\n" +
+    "   - NEVER invent or guess fake details for fields missing from memory (e.g. Phone number, Degree, CGPA, or Experience).\n" +
+    "   - When all memory-matched fields on the page are filled, return action \"done\" and tell the user to manually complete any remaining fields not in their memory.\n" +
+    "5. Dropdowns & Selects:\n" +
     "   - For <select> elements, ALWAYS use action: \"select\".\n" +
     "   - You MUST pick an option value or text from the element's [SELECT OPTIONS] list. Never invent values outside the provided options.\n" +
     "   - If a select dropdown already has the desired option selected (see 'currently selected'), do NOT select it again; move to the next field.\n" +
-    "5. Multi-Select Chips & Toggle Buttons (e.g. Technical Skills):\n" +
+    "6. Multi-Select Chips & Toggle Buttons (e.g. Technical Skills):\n" +
     "   - Elements marked [ALREADY SELECTED] are ALREADY chosen! NEVER click an element marked [ALREADY SELECTED] — clicking it will toggle and deselect it!\n" +
-    "   - Pick 1 to 3 relevant chips by clicking unselected chips.\n" +
+    "   - Pick 1 to 3 relevant chips by clicking unselected chips matching profile skills.\n" +
     "   - Once at least 1-2 chips are [ALREADY SELECTED], stop clicking chips and immediately proceed to the next input or click Next / Submit.\n" +
-    "6. Progress Forward (Avoid Loops):\n" +
+    "7. Progress Forward (Avoid Loops):\n" +
     "   - If an input or dropdown already has the desired value, do not repeat the action; proceed to the next uncompleted field or next step button.\n" +
-    "7. Numeric & CGPA Fields:\n" +
+    "8. Numeric & CGPA Fields:\n" +
     "   - For CGPA, GPA, or percentage fields, enter ONLY the plain number (e.g. \"8.8\" or \"90\"). NEVER include \"/ 10\", \"/10\", or \"%\" in the value.\n" +
-    "8. Safety Rules:\n" +
+    "9. Safety Rules:\n" +
     "   - NEVER propose typing into [SENSITIVE] elements (passwords, PINs, card numbers).\n" +
     '   - If all steps are complete or the goal is achieved, return action "done".\n' +
-    "9. Return ONLY a single raw JSON object starting with { and ending with }. No markdown fences. No other text.\n\n" +
+    "10. Return ONLY a single raw JSON object starting with { and ending with }. No markdown fences. No other text.\n\n" +
     languageSuffix(language)
   );
 }

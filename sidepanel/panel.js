@@ -2329,15 +2329,74 @@ loadSkills().catch(() => {});
 
 // ── Memory & Skills Tab Controllers (Slice 4.1 & 4.2) ────────────────────────
 
-const memProfileForm = document.getElementById("mem-profile-form");
-const memName        = document.getElementById("mem-name");
-const memCollege     = document.getElementById("mem-college");
-const memSkills      = document.getElementById("mem-skills");
-const memLinks       = document.getElementById("mem-links");
-const memTone        = document.getElementById("mem-tone");
-const memLanguage    = document.getElementById("mem-language");
-const memStatusEl    = document.getElementById("mem-status");
-const memClearBtn    = document.getElementById("mem-clear-btn");
+const memProfileForm      = document.getElementById("mem-profile-form");
+const memName             = document.getElementById("mem-name");
+const memCollege          = document.getElementById("mem-college");
+const memSkills           = document.getElementById("mem-skills");
+const memLinks            = document.getElementById("mem-links");
+const memTone             = document.getElementById("mem-tone");
+const memLanguage         = document.getElementById("mem-language");
+const memStatusEl         = document.getElementById("mem-status");
+const memClearBtn         = document.getElementById("mem-clear-btn");
+const memAddCustomBtn     = document.getElementById("mem-add-custom-btn");
+const memCustomFieldsList = document.getElementById("mem-custom-fields-list");
+
+let customProfileFields = [];
+
+function renderCustomProfileFields() {
+  if (!memCustomFieldsList) return;
+  memCustomFieldsList.innerHTML = "";
+
+  if (!customProfileFields || customProfileFields.length === 0) {
+    const emptyNotice = document.createElement("p");
+    emptyNotice.className = "mem-custom-hint";
+    emptyNotice.style.margin = "4px 0";
+    emptyNotice.style.fontStyle = "italic";
+    emptyNotice.textContent = "No additional details yet. Click '+ Add Detail' above.";
+    memCustomFieldsList.appendChild(emptyNotice);
+    return;
+  }
+
+  customProfileFields.forEach((item, index) => {
+    const row = document.createElement("div");
+    row.className = "mem-custom-row";
+    row.dataset.id = item.id || `custom-${index + 1}`;
+
+    const labelInput = document.createElement("input");
+    labelInput.type = "text";
+    labelInput.className = "mem-custom-label-input";
+    labelInput.placeholder = "Detail (e.g. Phone, Degree)";
+    labelInput.value = item.label || "";
+    labelInput.addEventListener("input", (e) => {
+      item.label = e.target.value;
+    });
+
+    const valueInput = document.createElement("input");
+    valueInput.type = "text";
+    valueInput.className = "mem-custom-value-input";
+    valueInput.placeholder = "Value (e.g. 9876543210, B.Tech)";
+    valueInput.value = item.value || "";
+    valueInput.addEventListener("input", (e) => {
+      item.value = e.target.value;
+    });
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "mem-custom-del-btn";
+    delBtn.title = "Delete detail";
+    delBtn.textContent = "✕";
+    delBtn.addEventListener("click", () => {
+      customProfileFields.splice(index, 1);
+      renderCustomProfileFields();
+    });
+
+    row.appendChild(labelInput);
+    row.appendChild(valueInput);
+    row.appendChild(delBtn);
+
+    memCustomFieldsList.appendChild(row);
+  });
+}
 
 const skillsCountBadge   = document.getElementById("skills-count-badge");
 const skillsExportBtn    = document.getElementById("skills-export-btn");
@@ -2393,6 +2452,17 @@ async function loadProfileMemory() {
     if (memLinks) memLinks.value = profile.links || "";
     if (memTone && profile.preferredTone) memTone.value = profile.preferredTone;
     if (memLanguage && profile.preferredLanguage) memLanguage.value = profile.preferredLanguage;
+
+    if (Array.isArray(profile.customFields)) {
+      customProfileFields = profile.customFields.map((cf) => ({
+        id: cf.id || `custom-${Date.now()}`,
+        label: cf.label || "",
+        value: cf.value || "",
+      }));
+    } else {
+      customProfileFields = [];
+    }
+    renderCustomProfileFields();
   } catch (err) {
     setMemoryStatus(err.message || "Could not load profile memory.", "err");
   }
@@ -2400,6 +2470,26 @@ async function loadProfileMemory() {
 
 async function saveProfileMemory() {
   try {
+    // Sync current values from DOM before saving
+    if (memCustomFieldsList) {
+      const rows = memCustomFieldsList.querySelectorAll(".mem-custom-row");
+      const synced = [];
+      rows.forEach((r, idx) => {
+        const lbl = r.querySelector(".mem-custom-label-input");
+        const val = r.querySelector(".mem-custom-value-input");
+        const labelText = lbl ? lbl.value.trim() : "";
+        const valText = val ? val.value.trim() : "";
+        if (labelText) {
+          synced.push({
+            id: r.dataset.id || `custom-${idx + 1}-${Date.now()}`,
+            label: labelText,
+            value: valText,
+          });
+        }
+      });
+      customProfileFields = synced;
+    }
+
     const patch = {
       name: memName ? memName.value.trim() : "",
       college: memCollege ? memCollege.value.trim() : "",
@@ -2407,8 +2497,10 @@ async function saveProfileMemory() {
       links: memLinks ? memLinks.value.trim() : "",
       preferredTone: memTone ? memTone.value : "professional",
       preferredLanguage: memLanguage ? memLanguage.value : "en",
+      customFields: customProfileFields,
     };
     await send("PROFILE_SET", patch);
+    renderCustomProfileFields();
     setMemoryStatus("✓ Profile memory saved successfully.");
   } catch (err) {
     setMemoryStatus(err.message || "Failed to save profile.", "err");
@@ -2424,6 +2516,9 @@ async function clearProfileMemory() {
     if (memTone) memTone.value = "professional";
     if (memLanguage) memLanguage.value = "en";
 
+    customProfileFields = [];
+    renderCustomProfileFields();
+
     await send("PROFILE_SET", {
       name: "",
       college: "",
@@ -2431,6 +2526,7 @@ async function clearProfileMemory() {
       links: "",
       preferredTone: "professional",
       preferredLanguage: "en",
+      customFields: [],
     });
     setMemoryStatus("Profile memory cleared.");
   } catch (err) {
@@ -2447,6 +2543,40 @@ if (memProfileForm) {
 
 if (memClearBtn) {
   memClearBtn.addEventListener("click", clearProfileMemory);
+}
+
+if (memAddCustomBtn) {
+  memAddCustomBtn.addEventListener("click", () => {
+    // Preserve any values currently typed in DOM inputs
+    if (memCustomFieldsList) {
+      const rows = memCustomFieldsList.querySelectorAll(".mem-custom-row");
+      rows.forEach((r, idx) => {
+        const lbl = r.querySelector(".mem-custom-label-input");
+        const val = r.querySelector(".mem-custom-value-input");
+        if (customProfileFields[idx]) {
+          if (lbl) customProfileFields[idx].label = lbl.value;
+          if (val) customProfileFields[idx].value = val.value;
+        }
+      });
+    }
+
+    customProfileFields.push({
+      id: `custom-${Date.now()}`,
+      label: "",
+      value: "",
+    });
+    renderCustomProfileFields();
+
+    // Focus on the newly added row's label input
+    if (memCustomFieldsList) {
+      const rows = memCustomFieldsList.querySelectorAll(".mem-custom-row");
+      const lastRow = rows[rows.length - 1];
+      if (lastRow) {
+        const input = lastRow.querySelector(".mem-custom-label-input");
+        if (input) input.focus();
+      }
+    }
+  });
 }
 
 // ── Skills Management & Cross-Tab Integration ────────────────────────────────

@@ -2407,6 +2407,87 @@ body.is-settings-open .main {
   box-shadow: 0 0 0 2px rgba(13, 107, 99, 0.15);
 }
 
+.mem-custom-section {
+  margin: 12px 0 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+}
+
+.mem-custom-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.mem-custom-heading {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+
+.mem-custom-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.mem-custom-fields-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mem-custom-row {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr 28px;
+  gap: 6px;
+  align-items: center;
+}
+
+.mem-custom-row input {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 11px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.mem-custom-row input:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 2px rgba(13, 107, 99, 0.15);
+}
+
+.mem-custom-del-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  height: 28px;
+  width: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.mem-custom-del-btn:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
 .mem-actions-row {
   display: flex;
   gap: 8px;

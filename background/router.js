@@ -121,6 +121,7 @@ const DEFAULT_PROFILE = {
   links: "",
   preferredLanguage: "en",
   preferredTone: "professional",
+  customFields: [],
 };
 
 const PROFILE_FIELDS = [
@@ -130,6 +131,7 @@ const PROFILE_FIELDS = [
   "links",
   "preferredLanguage",
   "preferredTone",
+  "customFields",
 ];
 
 function normalizeProfile(raw) {
@@ -156,6 +158,18 @@ function normalizeProfile(raw) {
   }
   if (typeof raw.preferredTone === "string" && raw.preferredTone.trim()) {
     next.preferredTone = raw.preferredTone.trim();
+  }
+
+  if (Array.isArray(raw.customFields)) {
+    next.customFields = raw.customFields
+      .filter((cf) => cf && typeof cf === "object" && typeof cf.label === "string" && cf.label.trim())
+      .map((cf, idx) => ({
+        id: typeof cf.id === "string" && cf.id.trim() ? cf.id.trim() : `custom-${idx + 1}-${Date.now()}`,
+        label: cf.label.trim(),
+        value: typeof cf.value === "string" ? cf.value.trim() : String(cf.value != null ? cf.value : "").trim(),
+      }));
+  } else {
+    next.customFields = [];
   }
 
   return next;
