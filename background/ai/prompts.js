@@ -376,6 +376,16 @@ function buildAgentStepPrompt(goal, history, elements, language, profile) {
       if (el.name) desc += ` (name: "${el.name}")`;
       if (el.id) desc += ` (id: "${el.id}")`;
       if (el.checked !== undefined) desc += ` (checked: ${el.checked})`;
+      if (el.selected) desc += ` [ALREADY SELECTED]`;
+      if (el.currentValue && el.tag !== "button" && el.tag !== "a") desc += ` (current value: "${el.currentValue}")`;
+      if (Array.isArray(el.options) && el.options.length > 0) {
+        const validOpts = el.options.filter((o) => o.value);
+        const optSummary = validOpts.map((o) => `"${o.value}" ("${o.text}")`).join(", ");
+        desc += ` [SELECT OPTIONS: ${optSummary}]`;
+        if (el.value) {
+          desc += ` (currently selected: "${el.value}" - "${el.selectedText || el.value}")`;
+        }
+      }
       if (el.consequential) desc += " [CONSEQUENTIAL]";
       if (el.sensitive) desc += " [SENSITIVE]";
       return desc;
@@ -424,6 +434,8 @@ function buildAgentStepPrompt(goal, history, elements, language, profile) {
         "- When proposing 'type' actions on form fields matching user details (e.g., name, college, skills, links/portfolio), use the profile values above.\n" +
         "- If a form has separate First Name and Last Name inputs and the profile has a Full Name (e.g. 'Priya Sharma'), enter the first name in First Name ('Priya') and the last name in Last Name ('Sharma').\n" +
         "- Use College for college/university inputs, Skills for skills/experience/domain, and Links for portfolio/website/github/linkedin.\n" +
+        "- For Degree, Year, or Domain selects: choose a matching option directly from the element's [SELECT OPTIONS] (e.g. 'btech', '3', 'swe').\n" +
+        "- For skill chips (e.g. Python, React): click 1-3 chips matching user skills. Do NOT click chips marked [ALREADY SELECTED]. Once selected, move to the next field or click Next.\n" +
         "- When the user's goal mentions 'from my profile' or asks to fill a form, always draw field values from this profile instead of using placeholder or made-up data.";
     }
   }
@@ -450,11 +462,20 @@ function buildAgentStepPrompt(goal, history, elements, language, profile) {
     '   - select: { "action": "select", "n": <element number>, "value": "<option value or label>", "reason": "<reason>" }\n' +
     '   - scroll: { "action": "scroll", "direction": "up" | "down", "reason": "<reason>" }\n' +
     '   - done:   { "action": "done", "reason": "<explanation of how goal is completed>" }\n' +
-    "4. Profile Data: If User Profile Memory is present and the goal asks to fill form fields or mentions profile, use the exact values from profile memory for 'type' actions.\n" +
-    "5. Safety Rules:\n" +
+    "4. Dropdowns & Selects:\n" +
+    "   - For <select> elements, ALWAYS use action: \"select\".\n" +
+    "   - You MUST pick an option value or text from the element's [SELECT OPTIONS] list. Never invent values outside the provided options.\n" +
+    "   - If a select dropdown already has the desired option selected (see 'currently selected'), do NOT select it again; move to the next field.\n" +
+    "5. Multi-Select Chips & Toggle Buttons (e.g. Technical Skills):\n" +
+    "   - Elements marked [ALREADY SELECTED] are ALREADY chosen! NEVER click an element marked [ALREADY SELECTED] — clicking it will toggle and deselect it!\n" +
+    "   - Pick 1 to 3 relevant chips by clicking unselected chips.\n" +
+    "   - Once at least 1-2 chips are [ALREADY SELECTED], stop clicking chips and immediately proceed to the next input or click Next / Submit.\n" +
+    "6. Progress Forward (Avoid Loops):\n" +
+    "   - If an input or dropdown already has the desired value, do not repeat the action; proceed to the next uncompleted field or next step button.\n" +
+    "7. Safety Rules:\n" +
     "   - NEVER propose typing into [SENSITIVE] elements (passwords, PINs, card numbers).\n" +
     '   - If all steps are complete or the goal is achieved, return action "done".\n' +
-    "6. Return ONLY a single raw JSON object starting with { and ending with }. No markdown fences. No other text.\n\n" +
+    "8. Return ONLY a single raw JSON object starting with { and ending with }. No markdown fences. No other text.\n\n" +
     languageSuffix(language)
   );
 }

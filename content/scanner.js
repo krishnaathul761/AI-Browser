@@ -250,8 +250,44 @@
       if (el.name) actionElement.name = el.name;
       if (el.getAttribute("placeholder")) actionElement.placeholder = el.getAttribute("placeholder");
       if (tag === "a" && el.href) actionElement.href = el.href;
+
+      // Extract options and current selection for <select> elements
+      if (tag === "select" && el.options) {
+        const opts = [];
+        for (let i = 0; i < el.options.length; i++) {
+          const opt = el.options[i];
+          const val = (opt.value != null ? String(opt.value) : "").trim();
+          const txt = (opt.text != null ? String(opt.text) : "").trim();
+          if (val || txt) {
+            opts.push({ value: val, text: txt });
+          }
+        }
+        actionElement.options = opts;
+        actionElement.value = el.value || "";
+        if (el.selectedIndex >= 0 && el.options[el.selectedIndex]) {
+          actionElement.selectedText = (el.options[el.selectedIndex].text || "").trim();
+        }
+      }
+
+      // Check if button/chip/tab/option is active or selected (e.g. skill chips, tabs, toggles)
+      const isSelected =
+        el.classList.contains("selected") ||
+        el.classList.contains("active") ||
+        el.getAttribute("aria-pressed") === "true" ||
+        el.getAttribute("aria-selected") === "true" ||
+        (tag === "input" && (type === "checkbox" || type === "radio") && el.checked);
+
+      if (isSelected) {
+        actionElement.selected = true;
+      }
+
       if (tag === "input" && (type === "checkbox" || type === "radio")) {
         actionElement.checked = el.checked;
+      }
+
+      // Record current value for text inputs and textareas (non-sensitive)
+      if ((tag === "input" || tag === "textarea") && el.value && type !== "password" && !sensitive) {
+        actionElement.currentValue = el.value;
       }
 
       scanned.push(actionElement);
